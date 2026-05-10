@@ -4,24 +4,100 @@
         <title>FocusGate</title>
         <style>
             body {
-                width: 300px;
+                width: 320px;
+                margin: 0;
                 padding: 1rem;
-                font-family: Arial, sans-serif;
+                font-family: Inter, sans-serif;
+                background: #0f172a;
+                color: #e2e8f0;
+            }
+            h1 {
+                font-size: 1.4rem;
+                margin: 0 0 0.5rem;
+            }
+            p {
+                margin: 0 0 1rem;
+                color: #94a3b8;
+            }
+            .row {
+                display: flex;
+                gap: 0.5rem;
+                flex-wrap: wrap;
+                margin-bottom: 1rem;
+            }
+            input {
+                flex: 1 1 100%;
+                padding: 0.75rem 0.85rem;
+                border-radius: 0.95rem;
+                border: 1px solid #334155;
+                background: #0f172a;
+                color: #e2e8f0;
+                outline: none;
             }
             button {
-                background: #3b82f6;
-                color: white;
+                appearance: none;
                 border: none;
-                padding: 0.5rem;
-                border-radius: 0.25rem;
+                border-radius: 0.95rem;
+                padding: 0.75rem 1rem;
+                font-weight: 700;
                 cursor: pointer;
+                transition: filter 0.15s ease;
+            }
+            button:hover {
+                filter: brightness(1.05);
+            }
+            .primary {
+                background: #8b5cf6;
+                color: white;
+            }
+            .secondary {
+                background: #1e293b;
+                color: #cbd5e1;
+            }
+            .list {
+                list-style: none;
+                margin: 0;
+                padding: 0;
+            }
+            .list-item {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                gap: 0.75rem;
+                padding: 0.8rem 1rem;
+                margin-bottom: 0.75rem;
+                border-radius: 1rem;
+                background: #111827;
+                color: #e2e8f0;
+            }
+            .list-item button {
+                background: #f87171;
+                color: white;
+            }
+            .empty {
+                color: #64748b;
+                font-size: 0.95rem;
             }
         </style>
     </head>
     <body>
         <h1>FocusGate</h1>
-        <p>Manage your focus settings.</p>
-        <button id="open-app">Open Full App</button>
+        <p>Block distractions and open the web app for full control.</p>
+
+        <div class="row">
+            <input id="pattern-input" placeholder="Enter blocked pattern" />
+            <button id="add-pattern" class="primary">Add</button>
+        </div>
+
+        <div class="row">
+            <button id="open-app" class="secondary">Open FocusGate App</button>
+            <button id="refresh-list" class="secondary">Refresh</button>
+        </div>
+
+        <h2 style="font-size: 1rem; margin: 1rem 0 0.5rem; color: #cbd5e1">Blocked patterns</h2>
+        <ul id="pattern-list" class="list"></ul>
+        <p id="empty-state" class="empty">No patterns configured yet.</p>
+
         <script src="popup.js"></script>
     </body>
 </html>

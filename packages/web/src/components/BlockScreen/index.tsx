@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import useEmblaCarousel from 'embla-carousel-react'
 import { Link } from 'react-router-dom'
@@ -89,16 +89,18 @@ export default function BlockScreen({ blockedUrl, onBypass, onClose, previewMode
   const [allDoneTriggered, setAllDoneTriggered] = useState(false)
   const [previewTasks, setPreviewTasks] = useState<TaskItem[]>(PREVIEW_TASKS)
 
-  const quoteQuery = useQuery<Quote | null>(['quote-of-day'], async () => {
-    const countRes = await supabase.from('quotes').select('id', { count: 'exact' })
-    if (countRes.error) throw countRes.error
-    const total = countRes.count ?? 0
-    if (total === 0) return null
-    const offset = getDayOfYear(new Date()) % total
-    const quoteRes = await supabase.from('quotes').select('id, text, author').range(offset, offset).limit(1).single()
-    if (quoteRes.error) throw quoteRes.error
-    return quoteRes.data
-  }, {
+  const quoteQuery = useQuery<Quote | null>({
+    queryKey: ['quote-of-day'],
+    queryFn: async () => {
+      const countRes = await supabase.from('quotes').select('id', { count: 'exact' })
+      if (countRes.error) throw countRes.error
+      const total = countRes.count ?? 0
+      if (total === 0) return null
+      const offset = getDayOfYear(new Date()) % total
+      const quoteRes = await supabase.from('quotes').select('id, text, author').range(offset, offset).limit(1).single()
+      if (quoteRes.error) throw quoteRes.error
+      return quoteRes.data
+    },
     staleTime: 86400000,
     enabled: !previewMode && !!userId,
   })
@@ -162,7 +164,7 @@ export default function BlockScreen({ blockedUrl, onBypass, onClose, previewMode
     mutationFn: async (task: TaskItem) => {
       if (previewMode) {
         setPreviewTasks((next) => next.map((item) => (item.id === task.id ? { ...item, completed: !item.completed } : item)))
-        return task
+        return { ...task, completed: !task.completed }
       }
       const result = await supabase
         .from('tasks')
@@ -173,12 +175,11 @@ export default function BlockScreen({ blockedUrl, onBypass, onClose, previewMode
       if (result.error) throw result.error
       return result.data as TaskItem
     },
-    onSuccess: (_, task) => {
+    onSuccess: (updatedTask) => {
       if (!previewMode) queryClient.invalidateQueries({ queryKey: ['tasks-today', userId] })
-      if (!hiddenTaskIds.includes(task.id) && !task.completed) return
-      if (task.completed) {
+      if (updatedTask.completed) {
         window.setTimeout(() => {
-          setHiddenTaskIds((list) => [...list, task.id])
+          setHiddenTaskIds((list) => [...list, updatedTask.id])
         }, 800)
       }
     },
@@ -378,7 +379,7 @@ export default function BlockScreen({ blockedUrl, onBypass, onClose, previewMode
                         className="min-w-full flex-shrink-0"
                       >
                         <div className="relative h-80 overflow-hidden rounded-[28px] bg-slate-900">
-                          <img src={card.image_url} alt={card.caption ?? 'Vision card'} className="h-full w-full object-cover" />
+                          <VisionCardImage src={card.image_url} alt={card.caption ?? 'Vision card'} className="h-full w-full object-cover" />
                           <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-slate-950/95 via-slate-950/35 to-transparent px-6 py-5">
                             <p className="text-sm font-semibold text-white">{card.caption ?? 'Dream big'}</p>
                           </div>

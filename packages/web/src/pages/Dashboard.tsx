@@ -81,22 +81,22 @@ export default function Dashboard() {
   }, [completedCount, totalCount])
 
   return (
-    <div className="min-h-screen bg-[#0a0a14] px-4 py-10 text-slate-100">
-      <div className="mx-auto flex max-w-6xl flex-col gap-8">
-        <header className="grid gap-6 rounded-[32px] border border-slate-800 bg-slate-950/90 p-8 shadow-soft md:grid-cols-[1.4fr_0.8fr] md:items-center">
+    <div className="min-h-screen bg-[color:var(--surface)] px-4 py-10 text-[color:var(--text)]">
+      <div className="mx-auto flex max-w-6xl flex-col gap-10">
+        <header className="grid gap-8 rounded-[32px] border border-[color:var(--border)] bg-[color:var(--surface-2)]/90 p-10 shadow-soft glass-panel-dark md:grid-cols-[1.4fr_0.9fr] md:items-center">
           <div>
-            <p className="text-sm uppercase tracking-[0.28em] text-slate-500">Today · {getToday()}</p>
-            <h1 className="mt-4 text-4xl font-semibold text-slate-100 sm:text-5xl">Welcome back, {user?.email?.split('@')[0] ?? 'FocusGate user'}</h1>
-            <p className="mt-4 max-w-2xl text-slate-400">{message}</p>
+            <p className="text-sm uppercase tracking-[0.3em] text-[color:var(--muted)]">Today · {getToday()}</p>
+            <h1 className="mt-4 text-5xl font-semibold text-[color:var(--text)] sm:text-6xl text-hero">Welcome back, {user?.email?.split('@')[0] ?? 'FocusGate user'}</h1>
+            <p className="mt-5 max-w-2xl text-lg leading-8 text-[color:var(--muted)]">{message}</p>
           </div>
           <div className="flex flex-col items-start gap-4 sm:items-end">
-            <div className="rounded-full bg-violet-500/10 px-5 py-3 text-sm font-semibold text-violet-200 shadow-[inset_0_0_0_1px_rgba(124,58,237,0.12)]">
+            <div className="rounded-full bg-[color:var(--accent)]/10 px-6 py-3 text-sm font-semibold text-[color:var(--accent)] shadow-[inset_0_0_0_1px_rgba(139,92,246,0.16)]">
               🔥 {streak} day streak
             </div>
             <button
               type="button"
               onClick={signOut}
-              className="rounded-2xl border border-slate-800 bg-slate-900 px-5 py-3 text-sm font-semibold text-slate-100 transition hover:border-violet-500/40 hover:bg-slate-800"
+              className="rounded-3xl bg-gradient-to-r from-[color:var(--accent)] to-[color:var(--accent-strong)] px-6 py-3 text-sm font-semibold text-white shadow-[0_18px_40px_rgba(139,92,246,0.18)] transition hover:brightness-105"
             >
               Sign Out
             </button>

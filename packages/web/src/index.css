@@ -3,13 +3,51 @@
 @tailwind utilities;
 
 @layer base {
-    @import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap");
+    @import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Playfair+Display:wght@500;600;700&display=swap");
 
     :root {
         color-scheme: dark;
-        font-family: "Inter", ui-sans-serif, system-ui, sans-serif;
-        background-color: #0a0a14;
-        color: #e2e8f0;
+        --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+        --font-heading: "Playfair Display", Georgia, serif;
+        --surface: #0a0a14;
+        --surface-2: #111827;
+        --surface-3: #0f172a;
+        --card: #111827;
+        --card-alt: #0f172a;
+        --text: #e2e8f0;
+        --text-strong: #f8fafc;
+        --muted: #94a3b8;
+        --border: rgba(148, 163, 184, 0.18);
+        --accent: #8b5cf6;
+        --accent-strong: #ec4899;
+        --accent-muted: rgba(139, 92, 246, 0.18);
+        --shadow: 0 32px 90px rgba(15, 23, 42, 0.22);
+        --radius: 32px;
+        --hero-glow: radial-gradient(circle at top left, rgba(139, 92, 246, 0.18), transparent 35%);
+        --surface-glow: linear-gradient(180deg, rgba(15, 23, 42, 0.76), rgba(15, 23, 42, 0.96));
+        background-color: var(--surface);
+        color: var(--text);
+    }
+
+    html.light {
+        color-scheme: light;
+        --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+        --font-heading: "Playfair Display", Georgia, serif;
+        --surface: #f8fafc;
+        --surface-2: #ffffff;
+        --surface-3: #e2e8f0;
+        --card: #f8fafc;
+        --card-alt: #ffffff;
+        --text: #0f172a;
+        --text-strong: #0f172a;
+        --muted: #475569;
+        --border: rgba(148, 163, 184, 0.32);
+        --accent: #7c3aed;
+        --accent-strong: #9333ea;
+        --accent-muted: rgba(124, 58, 237, 0.16);
+        --shadow: 0 32px 90px rgba(15, 23, 42, 0.08);
+        --hero-glow: radial-gradient(circle at top left, rgba(124, 58, 237, 0.12), transparent 35%);
+        --surface-glow: linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(240, 246, 252, 0.98));
     }
 
     * {
@@ -23,12 +61,40 @@
     body {
         margin: 0;
         min-height: 100vh;
+        font-family: var(--font-sans);
         background:
-            radial-gradient(circle at top, rgba(124, 58, 237, 0.18), transparent 25%),
-            linear-gradient(180deg, #0a0a14 0%, #07080f 100%);
-        color: #e2e8f0;
+            var(--hero-glow), radial-gradient(circle at 20% 0%, rgba(124, 58, 237, 0.08), transparent 26%),
+            linear-gradient(180deg, var(--surface) 0%, var(--surface-3) 100%);
+        color: var(--text);
         -webkit-font-smoothing: antialiased;
         -moz-osx-font-smoothing: grayscale;
+    }
+
+    h1,
+    h2,
+    h3,
+    h4,
+    h5,
+    h6 {
+        font-family: var(--font-heading);
+        letter-spacing: -0.03em;
+        line-height: 1.05;
+    }
+
+    h1 {
+        font-size: clamp(2.5rem, 4vw, 4rem);
+    }
+
+    h2 {
+        font-size: clamp(1.8rem, 3vw, 2.75rem);
+    }
+
+    p,
+    button,
+    input,
+    textarea,
+    label {
+        font-family: var(--font-sans);
     }
 
     button,
@@ -38,6 +104,37 @@
     }
 
     ::selection {
-        background-color: rgba(124, 58, 237, 0.35);
+        background-color: rgba(139, 92, 246, 0.3);
+    }
+}
+
+@layer utilities {
+    .text-hero {
+        font-family: var(--font-heading);
+        letter-spacing: -0.05em;
+    }
+
+    .glass-panel {
+        background: rgba(255, 255, 255, 0.06);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        backdrop-filter: blur(18px);
+    }
+
+    .glass-panel-dark {
+        background: rgba(15, 23, 42, 0.78);
+        border: 1px solid rgba(148, 163, 184, 0.18);
+        backdrop-filter: blur(18px);
+    }
+
+    .section-heading {
+        font-family: var(--font-heading);
+        font-size: clamp(2rem, 2.6vw, 3rem);
+        line-height: 1.02;
+    }
+
+    .panel-surface {
+        background: var(--surface-glow);
+        border: 1px solid var(--border);
+        box-shadow: var(--shadow);
     }
 }

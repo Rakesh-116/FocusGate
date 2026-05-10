@@ -3,7 +3,8 @@
     "name": "FocusGate",
     "version": "1.0",
     "description": "Intelligent App & URL Blocker with Dynamic Block Screen",
-    "permissions": ["activeTab", "storage", "scripting"],
+    "permissions": ["activeTab", "storage", "scripting", "tabs"],
+    "host_permissions": ["<all_urls>"],
     "background": {
         "service_worker": "background.js"
     },
