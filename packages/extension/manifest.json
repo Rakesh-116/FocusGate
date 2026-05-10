@@ -1,9 +1,9 @@
 {
     "manifest_version": 3,
     "name": "FocusGate",
-    "version": "1.0",
-    "description": "Intelligent App & URL Blocker with Dynamic Block Screen",
-    "permissions": ["activeTab", "storage", "scripting", "tabs"],
+    "version": "1.1.0",
+    "description": "Block distracting URLs until today's tasks are complete.",
+    "permissions": ["storage", "tabs", "webNavigation"],
     "host_permissions": ["<all_urls>"],
     "background": {
         "service_worker": "background.js"

@@ -1,13 +1,20 @@
-const DEFAULT_PATTERNS = ["youtube.com/shorts", "instagram.com/reels", "tiktok.com", "twitter.com"];
-
 const openAppButton = document.getElementById("open-app");
-const addPatternButton = document.getElementById("add-pattern");
 const refreshButton = document.getElementById("refresh-list");
-const patternInput = document.getElementById("pattern-input");
 const patternList = document.getElementById("pattern-list");
 const emptyState = document.getElementById("empty-state");
+const statusBadge = document.getElementById("status-badge");
+const statusDetail = document.getElementById("status-detail");
+const taskStats = document.getElementById("task-stats");
+const syncMeta = document.getElementById("sync-meta");
 
 let currentPatterns = [];
+
+function formatTime(isoString) {
+    if (!isoString) return "Not synced yet";
+    const date = new Date(isoString);
+    if (Number.isNaN(date.getTime())) return "Not synced yet";
+    return `Last synced ${date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`;
+}
 
 function renderPatterns() {
     while (patternList.firstChild) {
@@ -24,66 +31,54 @@ function renderPatterns() {
     currentPatterns.forEach((pattern) => {
         const item = document.createElement("li");
         item.className = "list-item";
-        item.innerHTML = `
-            <span>${pattern}</span>
-            <button data-pattern="${pattern}">Remove</button>
-        `;
-        const removeButton = item.querySelector("button");
-        removeButton?.addEventListener("click", () => removePattern(pattern));
+        item.innerHTML = `<span>${pattern}</span>`;
         patternList.appendChild(item);
     });
 }
 
-function loadPatterns() {
-    chrome.storage.local.get({ blockedUrls: DEFAULT_PATTERNS }, (result) => {
-        currentPatterns = Array.isArray(result.blockedUrls) ? result.blockedUrls : DEFAULT_PATTERNS;
-        renderPatterns();
-    });
-}
+function renderBlockingState(blockingState) {
+    const pending = Number(blockingState?.pendingTaskCount || 0);
+    const completed = Number(blockingState?.completedTaskCount || 0);
+    const total = Number(blockingState?.totalTaskCount || 0);
+    const hasTodaySync = Boolean(blockingState?.lastSyncedAt);
 
-function notifyTabsOfUpdate() {
-    chrome.tabs.query({}, (tabs) => {
-        tabs.forEach((tab) => {
-            if (tab.id != null) {
-                chrome.tabs.sendMessage(tab.id, { type: "blockedUrlsUpdated" }, () => {
-                    // Ignore tabs where the content script is not loaded
-                });
-            }
-        });
-    });
-}
-
-function savePatterns(patterns) {
-    chrome.storage.local.set({ blockedUrls: patterns }, () => {
-        currentPatterns = patterns;
-        renderPatterns();
-        notifyTabsOfUpdate();
-    });
-}
-
-function addPattern() {
-    const value = (patternInput.value || "").trim();
-    if (!value) return;
-    if (currentPatterns.includes(value)) {
-        patternInput.value = "";
-        return;
+    if (blockingState?.active) {
+        statusBadge.textContent = "Blocking Active";
+        statusBadge.className = "badge badge-active";
+        statusDetail.textContent = `${pending} pending task${pending === 1 ? "" : "s"} remaining before distracting URLs unlock.`;
+    } else if (hasTodaySync && total > 0) {
+        statusBadge.textContent = "Unlocked";
+        statusBadge.className = "badge badge-complete";
+        statusDetail.textContent = "All of today's tasks are complete. Blocked URLs are currently unlocked.";
+    } else {
+        statusBadge.textContent = "Waiting for Task Sync";
+        statusBadge.className = "badge badge-waiting";
+        statusDetail.textContent = "Open the FocusGate dashboard so tasks and blocked links sync into the extension.";
     }
-    savePatterns([...currentPatterns, value]);
-    patternInput.value = "";
+
+    taskStats.textContent = `${completed}/${total} tasks completed`;
+    syncMeta.textContent = formatTime(blockingState?.lastSyncedAt);
 }
 
-function removePattern(pattern) {
-    savePatterns(currentPatterns.filter((item) => item !== pattern));
+function loadExtensionState() {
+    chrome.runtime.sendMessage({ type: "getExtensionState" }, (response) => {
+        if (chrome.runtime.lastError) {
+            currentPatterns = [];
+            renderPatterns();
+            renderBlockingState(null);
+            return;
+        }
+
+        currentPatterns = Array.isArray(response?.blockedUrls) ? response.blockedUrls : [];
+        renderPatterns();
+        renderBlockingState(response?.blockingState ?? null);
+    });
 }
 
 openAppButton?.addEventListener("click", () => {
-    chrome.tabs.create({ url: "http://localhost:5173/preview-block" });
+    chrome.runtime.sendMessage({ type: "openApp" });
 });
 
-addPatternButton?.addEventListener("click", addPattern);
-refreshButton?.addEventListener("click", loadPatterns);
-patternInput?.addEventListener("keypress", (event) => {
-    if (event.key === "Enter") addPattern();
-});
+refreshButton?.addEventListener("click", loadExtensionState);
 
-loadPatterns();
+loadExtensionState();

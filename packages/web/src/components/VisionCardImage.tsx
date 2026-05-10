@@ -1,4 +1,5 @@
-import { useState } from 'react'
+/* Shared vision card image with signed-URL fallback and src reset on selection changes. */
+import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 
 const VISION_CARD_BUCKET = 'vision-cards'
@@ -16,7 +17,7 @@ function getVisionCardPathFromUrl(url: string) {
       return parsed.pathname.slice(index + marker.length)
     }
   } catch {
-    // ignore invalid URLs
+    // Ignore invalid URLs during fallback resolution.
   }
   return null
 }
@@ -32,6 +33,11 @@ export function VisionCardImage({
 }) {
   const [imageSrc, setImageSrc] = useState(src)
   const [triedFallback, setTriedFallback] = useState(false)
+
+  useEffect(() => {
+    setImageSrc(src)
+    setTriedFallback(false)
+  }, [src])
 
   const handleImageError = async () => {
     if (triedFallback) return

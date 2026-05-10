@@ -1,3 +1,4 @@
+/* Vision cards management page for uploads, ordering, and deletion. */
 import { useEffect, useState } from 'react'
 import { DndContext, closestCenter } from '@dnd-kit/core'
 import type { DragEndEvent } from '@dnd-kit/core'
@@ -8,6 +9,7 @@ import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../lib/supabase'
+import { VisionCardImage } from '../components/VisionCardImage'
 
 type VisionCard = {
   id: string
@@ -18,48 +20,13 @@ type VisionCard = {
 
 type UploadState = 'idle' | 'uploading' | 'error'
 
-const VISION_CARD_BUCKET = 'vision-cards'
-const VISION_CARD_PUBLIC_PATH = `/storage/v1/object/public/${VISION_CARD_BUCKET}/`
-
-function getVisionCardPathFromUrl(url: string) {
-  try {
-    if (url.startsWith(VISION_CARD_PUBLIC_PATH)) {
-      return url.slice(VISION_CARD_PUBLIC_PATH.length)
-    }
-    const parsed = new URL(url)
-    const marker = `/storage/v1/object/public/${VISION_CARD_BUCKET}/`
-    const index = parsed.pathname.indexOf(marker)
-    if (index !== -1) {
-      return parsed.pathname.slice(index + marker.length)
-    }
-  } catch {
-    // ignore invalid URLs
-  }
-  return null
-}
-
-function VisionCardImage({ src, alt, className }: { src: string; alt: string; className?: string }) {
-  const [imageSrc, setImageSrc] = useState(src)
-  const [triedFallback, setTriedFallback] = useState(false)
-
-  const handleImageError = async () => {
-    if (triedFallback) return
-    const storagePath = getVisionCardPathFromUrl(imageSrc) ?? (imageSrc.startsWith('/') ? imageSrc : null)
-    if (!storagePath) return
-
-    setTriedFallback(true)
-    const { data, error } = await supabase.storage.from(VISION_CARD_BUCKET).createSignedUrl(storagePath, 3600)
-    if (data?.signedUrl) {
-      setImageSrc(data.signedUrl)
-    } else if (error) {
-      console.warn('Vision card image failed to load and fallback signed URL could not be created:', error.message)
-    }
-  }
-
-  return <img src={imageSrc} alt={alt} className={className} onError={handleImageError} />
-}
-
-function SortableCard({ card }: { card: VisionCard }) {
+function SortableCard({
+  card,
+  onDelete,
+}: {
+  card: VisionCard
+  onDelete: (id: string) => void
+}) {
   const { attributes, listeners, setNodeRef, transform, transition } = useSortable({ id: card.id })
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -71,20 +38,29 @@ function SortableCard({ card }: { card: VisionCard }) {
       ref={setNodeRef}
       style={style}
       layout
-      className="group relative flex h-72 min-w-[280px] flex-col overflow-hidden rounded-[32px] border border-slate-700/70 bg-slate-950/90"
+      className="group relative flex h-72 min-w-[280px] flex-col overflow-hidden rounded-[32px] border border-[color:var(--border)] bg-[color:var(--card-alt)]/96 theme-shadow"
     >
       <VisionCardImage src={card.image_url} alt={card.caption ?? 'Vision card'} className="h-full w-full object-cover" />
-      <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-slate-950/95 via-slate-950/75 to-transparent px-5 py-4">
+      <div className="absolute inset-x-0 top-3 z-20 flex items-center justify-between px-3">
+        <button
+          type="button"
+          onClick={() => onDelete(card.id)}
+          className="rounded-full bg-black/55 px-3 py-2 text-xs font-semibold text-white opacity-0 transition group-hover:opacity-100"
+        >
+          Delete
+        </button>
+        <button
+          type="button"
+          {...attributes}
+          {...listeners}
+          className="rounded-full bg-black/55 px-3 py-2 text-xs font-semibold text-white opacity-0 transition group-hover:opacity-100"
+        >
+          Drag
+        </button>
+      </div>
+      <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 via-black/45 to-transparent px-5 py-4">
         <p className="text-sm font-semibold text-white">{card.caption ?? 'Capture your why'}</p>
       </div>
-      <button
-        type="button"
-        {...attributes}
-        {...listeners}
-        className="absolute right-3 top-3 rounded-full bg-slate-900/80 px-3 py-2 text-xs font-semibold text-slate-200 opacity-0 transition group-hover:opacity-100"
-      >
-        Drag
-      </button>
     </motion.div>
   )
 }
@@ -129,7 +105,9 @@ export default function VisionCards() {
       const urlData = await supabase.storage.from('vision-cards').getPublicUrl(filename)
       const imageUrl = urlData.data.publicUrl
       const order = cards.length + 1
-      const { error: insertError } = await supabase.from('vision_cards').insert([{ user_id: userId, image_url: imageUrl, caption: caption || null, sort_order: order }])
+      const { error: insertError } = await supabase
+        .from('vision_cards')
+        .insert([{ user_id: userId, image_url: imageUrl, caption: caption || null, sort_order: order }])
       if (insertError) throw insertError
       return true
     },
@@ -173,7 +151,7 @@ export default function VisionCards() {
 
   const active = cardsQuery.isFetching
 
-  const handleDragEnd = (event: DragEndEvent) => {
+  function handleDragEnd(event: DragEndEvent) {
     const { active, over } = event
     if (!over || active.id === over.id) return
     const oldIndex = cards.findIndex((card) => card.id === active.id)
@@ -183,13 +161,13 @@ export default function VisionCards() {
     reorderMutation.mutate(next)
   }
 
-  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+  function handleFileChange(event: React.ChangeEvent<HTMLInputElement>) {
     const selected = event.target.files?.[0] ?? null
     setFile(selected)
     setErrorMessage('')
   }
 
-  const handleAddCard = async () => {
+  function handleAddCard() {
     if (!file) {
       setErrorMessage('Please select an image file.')
       return
@@ -204,30 +182,30 @@ export default function VisionCards() {
   return (
     <div className="min-h-screen bg-[color:var(--surface)] px-4 py-10 text-[color:var(--text)]">
       <div className="mx-auto max-w-6xl space-y-8">
-        <div className="flex flex-col gap-4 rounded-[32px] border border-[color:var(--border)] bg-[color:var(--surface-2)]/90 p-8 shadow-soft glass-panel-dark sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-col gap-4 rounded-[32px] border border-[color:var(--border)] bg-[color:var(--surface-2)]/90 p-8 glass-panel-dark theme-shadow sm:flex-row sm:items-center sm:justify-between">
           <div>
             <p className="text-sm uppercase tracking-[0.28em] text-[color:var(--muted)]">Vision Cards</p>
-            <h1 className="mt-3 text-4xl font-semibold text-[color:var(--text)] section-heading">Build the block screen that inspires you.</h1>
+            <h1 className="section-heading mt-3 text-4xl font-semibold text-[color:var(--text)]">Build the block screen that inspires you.</h1>
           </div>
           <div className="flex flex-wrap items-center gap-3">
             <button
               type="button"
               onClick={() => setIsModalOpen(true)}
-              className="rounded-3xl bg-[color:var(--accent)] px-5 py-3 text-sm font-semibold text-white transition hover:brightness-110"
+              className="rounded-3xl bg-gradient-to-r from-[color:var(--accent)] to-[color:var(--accent-strong)] px-5 py-3 text-sm font-semibold text-white transition hover:brightness-110"
             >
               Add Card
             </button>
             <button
               type="button"
               onClick={() => navigate('/dashboard')}
-              className="rounded-3xl border border-[color:var(--border)] bg-[color:var(--surface-3)] px-5 py-3 text-sm font-semibold text-[color:var(--text)] transition hover:border-[color:var(--accent)]"
+              className="rounded-3xl border border-[color:var(--border)] bg-[color:var(--button-secondary-bg)] px-5 py-3 text-sm font-semibold text-[color:var(--button-secondary-text)] transition hover:bg-[color:var(--button-secondary-hover)]"
             >
               Back to dashboard
             </button>
           </div>
         </div>
 
-        <div className="rounded-[32px] border border-[color:var(--border)] bg-[color:var(--card)]/95 p-8 shadow-soft">
+        <div className="rounded-[32px] border border-[color:var(--border)] bg-[color:var(--card)]/95 p-8 glass-panel-dark theme-shadow">
           <div className="mb-6 flex items-center justify-between gap-4">
             <p className="text-sm text-[color:var(--muted)]">Drag cards to reorder how they appear on your block screen.</p>
             {active && <span className="text-sm text-[color:var(--muted)]">Syncing order...</span>}
@@ -237,16 +215,7 @@ export default function VisionCards() {
               <SortableContext items={cards.map((card) => card.id)} strategy={horizontalListSortingStrategy}>
                 <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
                   {cards.map((card) => (
-                    <div key={card.id} className="group relative">
-                      <SortableCard card={card} />
-                      <button
-                        type="button"
-                        onClick={() => deleteMutation.mutate(card.id)}
-                        className="absolute right-3 top-3 z-10 rounded-full bg-[color:var(--surface-3)]/80 px-3 py-2 text-xs font-semibold text-[color:var(--text)] opacity-0 transition group-hover:opacity-100"
-                      >
-                        Delete
-                      </button>
-                    </div>
+                    <SortableCard key={card.id} card={card} onDelete={(cardId) => deleteMutation.mutate(cardId)} />
                   ))}
                 </div>
               </SortableContext>
@@ -261,40 +230,40 @@ export default function VisionCards() {
       </div>
 
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4 py-6">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[color:var(--overlay-bg)] px-4 py-6">
           <motion.div
             initial={{ opacity: 0, y: 24 }}
             animate={{ opacity: 1, y: 0 }}
-            className="w-full max-w-2xl rounded-[32px] border border-slate-700/80 bg-slate-950/95 p-8 shadow-soft backdrop-blur-xl"
+            className="w-full max-w-2xl rounded-[32px] border border-[color:var(--border)] bg-[color:var(--card)]/98 p-8 glass-panel-dark theme-shadow backdrop-blur-xl"
           >
             <div className="flex items-center justify-between gap-4">
               <div>
-                <h2 className="text-2xl font-semibold text-white">Add a Vision Card</h2>
-                <p className="mt-2 text-sm text-slate-400">Upload an image and add a motivating caption.</p>
+                <h2 className="text-2xl font-semibold text-[color:var(--text)]">Add a Vision Card</h2>
+                <p className="mt-2 text-sm text-[color:var(--muted)]">Upload an image and add a motivating caption.</p>
               </div>
-              <button type="button" onClick={() => setIsModalOpen(false)} className="text-slate-400 transition hover:text-white">Close</button>
+              <button type="button" onClick={() => setIsModalOpen(false)} className="text-[color:var(--muted)] transition hover:text-[color:var(--text)]">Close</button>
             </div>
 
             <div className="mt-8 grid gap-6">
-              <label className="rounded-3xl border border-slate-700/70 bg-slate-900 px-4 py-5 text-sm text-slate-300">
-                <span className="font-semibold text-slate-100">Image</span>
-                <input type="file" accept="image/*" onChange={handleFileChange} className="mt-4 w-full text-sm text-slate-200" />
+              <label className="rounded-3xl border border-[color:var(--input-border)] bg-[color:var(--input-bg)] px-4 py-5 text-sm text-[color:var(--muted)]">
+                <span className="font-semibold text-[color:var(--text)]">Image</span>
+                <input type="file" accept="image/*" onChange={handleFileChange} className="mt-4 w-full text-sm text-[color:var(--text)]" />
               </label>
-              <label className="grid gap-2 text-sm text-slate-300">
+              <label className="grid gap-2 text-sm text-[color:var(--muted)]">
                 Caption
                 <input
                   value={caption}
                   onChange={(event) => setCaption(event.target.value)}
-                  className="rounded-3xl border border-slate-700/70 bg-slate-950/90 px-4 py-3 text-slate-100 outline-none ring-1 ring-transparent transition focus:border-violet-400 focus:ring-violet-500/30"
+                  className="rounded-3xl border border-[color:var(--input-border)] bg-[color:var(--input-bg)] px-4 py-3 text-[color:var(--text)] outline-none ring-1 ring-transparent transition focus:border-[color:var(--accent)] focus:ring-[color:var(--accent)]/30"
                   placeholder="This is the life I want to build"
                 />
               </label>
-              {errorMessage && <p className="text-sm text-rose-300">{errorMessage}</p>}
+              {errorMessage && <p className="text-sm text-rose-400">{errorMessage}</p>}
               <div className="flex justify-end gap-3">
                 <button
                   type="button"
                   onClick={() => setIsModalOpen(false)}
-                  className="rounded-3xl border border-slate-700/70 bg-slate-900 px-4 py-3 text-sm font-semibold text-slate-200 transition hover:border-slate-500"
+                  className="rounded-3xl border border-[color:var(--border)] bg-[color:var(--button-secondary-bg)] px-4 py-3 text-sm font-semibold text-[color:var(--button-secondary-text)] transition hover:bg-[color:var(--button-secondary-hover)]"
                 >
                   Cancel
                 </button>
@@ -302,9 +271,9 @@ export default function VisionCards() {
                   type="button"
                   onClick={handleAddCard}
                   disabled={uploadButtonDisabled}
-                  className="rounded-3xl bg-violet-500 px-4 py-3 text-sm font-semibold text-slate-950 transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
+                  className="rounded-3xl bg-gradient-to-r from-[color:var(--accent)] to-[color:var(--accent-strong)] px-4 py-3 text-sm font-semibold text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  {uploadState === 'uploading' ? 'Uploading…' : 'Save card'}
+                  {uploadState === 'uploading' ? 'Uploading...' : 'Save card'}
                 </button>
               </div>
             </div>

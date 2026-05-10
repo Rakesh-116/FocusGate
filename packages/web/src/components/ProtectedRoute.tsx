@@ -1,3 +1,4 @@
+/* Route guard that redirects unauthenticated users to the auth page. */
 import { Navigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import type { ReactElement } from 'react'
@@ -7,8 +8,8 @@ export function ProtectedRoute({ children }: { children: ReactElement }) {
 
   if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-[#0a0a14] px-4 text-slate-100">
-        <div className="rounded-[28px] border border-slate-800 bg-slate-950/90 px-6 py-4 text-sm font-medium shadow-soft">
+      <div className="flex min-h-screen items-center justify-center bg-[color:var(--surface)] px-4 text-[color:var(--text)]">
+        <div className="rounded-[28px] border border-[color:var(--border)] bg-[color:var(--card)]/96 px-6 py-4 text-sm font-medium glass-panel-dark theme-shadow">
           Loading...
         </div>
       </div>

@@ -1,10 +1,12 @@
+/* Dashboard page for daily tasks, progress, and streak status. */
 import { useMemo } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { useAuth } from '../context/AuthContext'
 import { useTasks } from '../hooks/useTasks'
 import { TaskList } from '../components/TaskList'
 import { TaskProgress } from '../components/TaskProgress'
+import { BlockedLinksManager } from '../components/BlockedLinksManager'
 import { supabase } from '../lib/supabase'
-import { useQuery } from '@tanstack/react-query'
 
 function getToday() {
   return new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })
@@ -36,19 +38,19 @@ function useStreak(userId: string | null) {
       if (attemptsError) throw attemptsError
 
       const completedByDate = new Map<string, boolean>()
-        ; (tasks as StreakTask[] | null | undefined)?.forEach((task) => {
-          const date = task.date
-          const hadAllDone = completedByDate.get(date) ?? true
-          completedByDate.set(date, hadAllDone && task.completed)
-        })
+      ;(tasks as StreakTask[] | null | undefined)?.forEach((task) => {
+        const date = task.date
+        const hadAllDone = completedByDate.get(date) ?? true
+        completedByDate.set(date, hadAllDone && task.completed)
+      })
 
       const bypassDates = new Set<string>()
-        ; (attempts as StreakAttempt[] | null | undefined)?.forEach((attempt) => {
-          if (attempt.bypassed) {
-            const date = new Date(attempt.timestamp).toISOString().slice(0, 10)
-            bypassDates.add(date)
-          }
-        })
+      ;(attempts as StreakAttempt[] | null | undefined)?.forEach((attempt) => {
+        if (attempt.bypassed) {
+          const date = new Date(attempt.timestamp).toISOString().slice(0, 10)
+          bypassDates.add(date)
+        }
+      })
 
       let streak = 0
       const current = new Date()
@@ -76,22 +78,24 @@ export default function Dashboard() {
 
   const message = useMemo(() => {
     if (totalCount === 0) return 'Start your first focus task for today.'
-    if (completedCount === totalCount) return 'All tasks completed — great work!'
+    if (completedCount === totalCount) return 'All tasks completed - great work!'
     return 'Stay on track by completing your top tasks.'
   }, [completedCount, totalCount])
 
   return (
     <div className="min-h-screen bg-[color:var(--surface)] px-4 py-10 text-[color:var(--text)]">
       <div className="mx-auto flex max-w-6xl flex-col gap-10">
-        <header className="grid gap-8 rounded-[32px] border border-[color:var(--border)] bg-[color:var(--surface-2)]/90 p-10 shadow-soft glass-panel-dark md:grid-cols-[1.4fr_0.9fr] md:items-center">
+        <header className="grid gap-8 rounded-[32px] border border-[color:var(--border)] bg-[color:var(--surface-2)]/90 p-10 glass-panel-dark theme-shadow md:grid-cols-[1.4fr_0.9fr] md:items-center">
           <div>
-            <p className="text-sm uppercase tracking-[0.3em] text-[color:var(--muted)]">Today · {getToday()}</p>
-            <h1 className="mt-4 text-5xl font-semibold text-[color:var(--text)] sm:text-6xl text-hero">Welcome back, {user?.email?.split('@')[0] ?? 'FocusGate user'}</h1>
+            <p className="text-sm uppercase tracking-[0.3em] text-[color:var(--muted)]">Today | {getToday()}</p>
+            <h1 className="text-hero mt-4 text-5xl font-semibold text-[color:var(--text)] sm:text-6xl">
+              Welcome back, {user?.email?.split('@')[0] ?? 'FocusGate user'}
+            </h1>
             <p className="mt-5 max-w-2xl text-lg leading-8 text-[color:var(--muted)]">{message}</p>
           </div>
           <div className="flex flex-col items-start gap-4 sm:items-end">
-            <div className="rounded-full bg-[color:var(--accent)]/10 px-6 py-3 text-sm font-semibold text-[color:var(--accent)] shadow-[inset_0_0_0_1px_rgba(139,92,246,0.16)]">
-              🔥 {streak} day streak
+            <div className="rounded-full bg-[color:var(--accent-muted)] px-6 py-3 text-sm font-semibold text-[color:var(--accent)] shadow-[inset_0_0_0_1px_var(--border)]">
+              Streak: {streak} day{streak === 1 ? '' : 's'}
             </div>
             <button
               type="button"
@@ -113,6 +117,7 @@ export default function Dashboard() {
             isLoading={isLoading}
             maxReached={maxReached}
           />
+          <BlockedLinksManager userId={userId} />
         </main>
       </div>
     </div>

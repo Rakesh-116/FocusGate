@@ -1,3 +1,4 @@
+/* Global theme tokens and shared UI utilities for the FocusGate web app. */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -9,11 +10,11 @@
         color-scheme: dark;
         --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
         --font-heading: "Playfair Display", Georgia, serif;
-        --surface: #0a0a14;
-        --surface-2: #111827;
-        --surface-3: #0f172a;
-        --card: #111827;
-        --card-alt: #0f172a;
+        --surface: #0a0f1d;
+        --surface-2: #121a2c;
+        --surface-3: #182235;
+        --card: #111b2f;
+        --card-alt: #162238;
         --text: #e2e8f0;
         --text-strong: #f8fafc;
         --muted: #94a3b8;
@@ -21,7 +22,16 @@
         --accent: #8b5cf6;
         --accent-strong: #ec4899;
         --accent-muted: rgba(139, 92, 246, 0.18);
-        --shadow: 0 32px 90px rgba(15, 23, 42, 0.22);
+        --success: #4ade80;
+        --glass-bg: rgba(15, 23, 42, 0.76);
+        --glass-border: rgba(148, 163, 184, 0.16);
+        --input-bg: rgba(15, 23, 42, 0.9);
+        --input-border: rgba(148, 163, 184, 0.18);
+        --button-secondary-bg: rgba(15, 23, 42, 0.9);
+        --button-secondary-hover: rgba(30, 41, 59, 0.95);
+        --button-secondary-text: #e2e8f0;
+        --overlay-bg: rgba(2, 6, 23, 0.72);
+        --shadow: 0 24px 70px rgba(2, 6, 23, 0.28);
         --radius: 32px;
         --hero-glow: radial-gradient(circle at top left, rgba(139, 92, 246, 0.18), transparent 35%);
         --surface-glow: linear-gradient(180deg, rgba(15, 23, 42, 0.76), rgba(15, 23, 42, 0.96));
@@ -33,21 +43,30 @@
         color-scheme: light;
         --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
         --font-heading: "Playfair Display", Georgia, serif;
-        --surface: #f8fafc;
+        --surface: #f3f7fb;
         --surface-2: #ffffff;
-        --surface-3: #e2e8f0;
-        --card: #f8fafc;
+        --surface-3: #e9eef5;
+        --card: rgba(255, 255, 255, 0.94);
         --card-alt: #ffffff;
-        --text: #0f172a;
+        --text: #162033;
         --text-strong: #0f172a;
-        --muted: #475569;
-        --border: rgba(148, 163, 184, 0.32);
+        --muted: #5c6b80;
+        --border: rgba(100, 116, 139, 0.2);
         --accent: #7c3aed;
         --accent-strong: #9333ea;
         --accent-muted: rgba(124, 58, 237, 0.16);
-        --shadow: 0 32px 90px rgba(15, 23, 42, 0.08);
-        --hero-glow: radial-gradient(circle at top left, rgba(124, 58, 237, 0.12), transparent 35%);
-        --surface-glow: linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(240, 246, 252, 0.98));
+        --success: #15803d;
+        --glass-bg: rgba(255, 255, 255, 0.82);
+        --glass-border: rgba(148, 163, 184, 0.18);
+        --input-bg: rgba(255, 255, 255, 0.96);
+        --input-border: rgba(148, 163, 184, 0.24);
+        --button-secondary-bg: rgba(255, 255, 255, 0.92);
+        --button-secondary-hover: rgba(233, 238, 245, 0.98);
+        --button-secondary-text: #162033;
+        --overlay-bg: rgba(15, 23, 42, 0.45);
+        --shadow: 0 18px 48px rgba(15, 23, 42, 0.1);
+        --hero-glow: radial-gradient(circle at top left, rgba(124, 58, 237, 0.08), transparent 34%);
+        --surface-glow: linear-gradient(180deg, rgba(255, 255, 255, 0.88), rgba(247, 250, 252, 0.98));
     }
 
     * {
@@ -63,7 +82,7 @@
         min-height: 100vh;
         font-family: var(--font-sans);
         background:
-            var(--hero-glow), radial-gradient(circle at 20% 0%, rgba(124, 58, 237, 0.08), transparent 26%),
+            var(--hero-glow), radial-gradient(circle at 20% 0%, rgba(124, 58, 237, 0.07), transparent 26%),
             linear-gradient(180deg, var(--surface) 0%, var(--surface-3) 100%);
         color: var(--text);
         -webkit-font-smoothing: antialiased;
@@ -121,8 +140,8 @@
     }
 
     .glass-panel-dark {
-        background: rgba(15, 23, 42, 0.78);
-        border: 1px solid rgba(148, 163, 184, 0.18);
+        background: var(--glass-bg);
+        border: 1px solid var(--glass-border);
         backdrop-filter: blur(18px);
     }
 
@@ -135,6 +154,10 @@
     .panel-surface {
         background: var(--surface-glow);
         border: 1px solid var(--border);
+        box-shadow: var(--shadow);
+    }
+
+    .theme-shadow {
         box-shadow: var(--shadow);
     }
 }

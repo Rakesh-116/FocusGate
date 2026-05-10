@@ -1,7 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "../lib/supabase";
-
-const today = new Date().toISOString().slice(0, 10);
+import { getLocalDateKey } from "../lib/date";
 
 export type Task = {
     id: string;
@@ -14,6 +13,7 @@ export type Task = {
 
 export function useTasks(userId: string | null) {
     const queryClient = useQueryClient();
+    const today = getLocalDateKey();
 
     const tasksQuery = useQuery<Task[]>({
         queryKey: ["tasks", today, userId],
@@ -33,9 +33,13 @@ export function useTasks(userId: string | null) {
 
     const addTaskMutation = useMutation<Task, Error, string>({
         mutationFn: async (title: string) => {
-            const { data, error } = await supabase.from("tasks").insert([{ user_id: userId!, title, date: today }]);
+            const { data, error } = await supabase
+                .from("tasks")
+                .insert([{ user_id: userId!, title, date: today }])
+                .select("*")
+                .single();
             if (error) throw error;
-            return data?.[0] as unknown as Task;
+            return data;
         },
         onSuccess: () => queryClient.invalidateQueries({ queryKey: ["tasks", today, userId] }),
     });
@@ -45,9 +49,11 @@ export function useTasks(userId: string | null) {
             const { data, error } = await supabase
                 .from("tasks")
                 .update({ completed: !task.completed })
-                .eq("id", task.id);
+                .eq("id", task.id)
+                .select("*")
+                .single();
             if (error) throw error;
-            return data?.[0] as unknown as Task;
+            return data;
         },
         onSuccess: () => queryClient.invalidateQueries({ queryKey: ["tasks", today, userId] }),
     });

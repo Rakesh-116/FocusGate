@@ -1,3 +1,4 @@
+/* Authentication page for login and sign-up flows. */
 import { useState } from 'react'
 import type { FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
@@ -53,20 +54,20 @@ export default function AuthPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#0a0a14] px-4 py-10 text-slate-100">
-      <div className="mx-auto flex max-w-lg flex-col gap-8 rounded-[32px] border border-slate-800 bg-slate-950/95 p-8 shadow-soft">
-        <div className="grid grid-cols-2 gap-1 rounded-full bg-slate-900/80 p-1">
+    <div className="min-h-screen bg-[color:var(--surface)] px-4 py-10 text-[color:var(--text)]">
+      <div className="mx-auto flex max-w-lg flex-col gap-8 rounded-[32px] border border-[color:var(--border)] bg-[color:var(--card)]/96 p-8 glass-panel-dark theme-shadow">
+        <div className="grid grid-cols-2 gap-1 rounded-full bg-[color:var(--surface-3)] p-1">
           <button
             type="button"
             onClick={() => setMode('login')}
-            className={`rounded-full px-5 py-3 text-sm font-semibold transition ${mode === 'login' ? 'bg-slate-100 text-slate-950' : 'text-slate-300 hover:text-slate-100'}`}
+            className={`rounded-full px-5 py-3 text-sm font-semibold transition ${mode === 'login' ? 'bg-[color:var(--surface-2)] text-[color:var(--text)]' : 'text-[color:var(--muted)] hover:text-[color:var(--text)]'}`}
           >
             Login
           </button>
           <button
             type="button"
             onClick={() => setMode('signup')}
-            className={`rounded-full px-5 py-3 text-sm font-semibold transition ${mode === 'signup' ? 'bg-slate-100 text-slate-950' : 'text-slate-300 hover:text-slate-100'}`}
+            className={`rounded-full px-5 py-3 text-sm font-semibold transition ${mode === 'signup' ? 'bg-[color:var(--surface-2)] text-[color:var(--text)]' : 'text-[color:var(--muted)] hover:text-[color:var(--text)]'}`}
           >
             Sign up
           </button>
@@ -74,9 +75,9 @@ export default function AuthPage() {
 
         <form onSubmit={handleSubmit} className="grid gap-6">
           <div className="grid gap-2">
-            <label className="text-sm font-medium text-slate-300">Email</label>
+            <label className="text-sm font-medium text-[color:var(--text)]">Email</label>
             <input
-              className="rounded-2xl border border-slate-800 bg-slate-950/90 px-4 py-3 text-slate-100 outline-none ring-1 ring-transparent transition focus:border-violet-400 focus:ring-violet-500/40"
+              className="rounded-2xl border border-[color:var(--input-border)] bg-[color:var(--input-bg)] px-4 py-3 text-[color:var(--text)] outline-none ring-1 ring-transparent transition focus:border-[color:var(--accent)] focus:ring-[color:var(--accent)]/40"
               type="email"
               value={email}
               onChange={(event) => setEmail(event.target.value)}
@@ -85,9 +86,9 @@ export default function AuthPage() {
           </div>
 
           <div className="grid gap-2">
-            <label className="text-sm font-medium text-slate-300">Password</label>
+            <label className="text-sm font-medium text-[color:var(--text)]">Password</label>
             <input
-              className="rounded-2xl border border-slate-800 bg-slate-950/90 px-4 py-3 text-slate-100 outline-none ring-1 ring-transparent transition focus:border-violet-400 focus:ring-violet-500/40"
+              className="rounded-2xl border border-[color:var(--input-border)] bg-[color:var(--input-bg)] px-4 py-3 text-[color:var(--text)] outline-none ring-1 ring-transparent transition focus:border-[color:var(--accent)] focus:ring-[color:var(--accent)]/40"
               type="password"
               value={password}
               onChange={(event) => setPassword(event.target.value)}
@@ -97,9 +98,9 @@ export default function AuthPage() {
 
           {mode === 'signup' && (
             <div className="grid gap-2">
-              <label className="text-sm font-medium text-slate-300">Confirm password</label>
+              <label className="text-sm font-medium text-[color:var(--text)]">Confirm password</label>
               <input
-                className="rounded-2xl border border-slate-800 bg-slate-950/90 px-4 py-3 text-slate-100 outline-none ring-1 ring-transparent transition focus:border-violet-400 focus:ring-violet-500/40"
+                className="rounded-2xl border border-[color:var(--input-border)] bg-[color:var(--input-bg)] px-4 py-3 text-[color:var(--text)] outline-none ring-1 ring-transparent transition focus:border-[color:var(--accent)] focus:ring-[color:var(--accent)]/40"
                 type="password"
                 value={confirmPassword}
                 onChange={(event) => setConfirmPassword(event.target.value)}
@@ -108,27 +109,27 @@ export default function AuthPage() {
             </div>
           )}
 
-          {errorMessage && <div className="rounded-2xl bg-rose-500/15 px-4 py-3 text-sm text-rose-300">{errorMessage}</div>}
+          {errorMessage && <div className="rounded-2xl bg-rose-500/12 px-4 py-3 text-sm text-rose-400">{errorMessage}</div>}
 
           <button
             type="submit"
             disabled={loading}
-            className="rounded-2xl bg-gradient-to-r from-violet-500 to-fuchsia-500 px-5 py-3 text-sm font-semibold text-slate-950 transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
+            className="rounded-2xl bg-gradient-to-r from-[color:var(--accent)] to-[color:var(--accent-strong)] px-5 py-3 text-sm font-semibold text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {loading ? 'Working…' : mode === 'login' ? 'Continue' : 'Create account'}
+            {loading ? 'Working...' : mode === 'login' ? 'Continue' : 'Create account'}
           </button>
         </form>
 
-        <div className="flex items-center gap-3 text-sm text-slate-500">
-          <span className="h-px flex-1 bg-slate-800" />
+        <div className="flex items-center gap-3 text-sm text-[color:var(--muted)]">
+          <span className="h-px flex-1 bg-[color:var(--border)]" />
           <span>OR</span>
-          <span className="h-px flex-1 bg-slate-800" />
+          <span className="h-px flex-1 bg-[color:var(--border)]" />
         </div>
 
         <button
           type="button"
           onClick={handleGoogle}
-          className="rounded-2xl border border-slate-800 bg-slate-900 px-5 py-3 text-sm font-semibold text-slate-100 transition hover:bg-slate-800"
+          className="rounded-2xl border border-[color:var(--border)] bg-[color:var(--button-secondary-bg)] px-5 py-3 text-sm font-semibold text-[color:var(--button-secondary-text)] transition hover:bg-[color:var(--button-secondary-hover)]"
         >
           Continue with Google
         </button>

@@ -1,3 +1,4 @@
+/* Progress card showing today's task completion ratio. */
 interface TaskProgressProps {
   completed: number
   total: number
@@ -7,7 +8,7 @@ export function TaskProgress({ completed, total }: TaskProgressProps) {
   const progress = total === 0 ? 0 : Math.round((completed / total) * 100)
 
   return (
-    <div className="rounded-[32px] border border-[color:var(--border)] bg-[color:var(--card)]/92 p-7 shadow-soft glass-panel-dark">
+    <div className="rounded-[32px] border border-[color:var(--border)] bg-[color:var(--card)]/92 p-7 glass-panel-dark theme-shadow">
       <div className="mb-6 flex items-center justify-between gap-4">
         <div>
           <p className="text-sm font-medium uppercase tracking-[0.28em] text-[color:var(--muted)]">Progress</p>
@@ -19,7 +20,7 @@ export function TaskProgress({ completed, total }: TaskProgressProps) {
         <div className="h-full rounded-full bg-gradient-to-r from-[color:var(--accent)] to-[color:var(--accent-strong)] transition-all" style={{ width: `${progress}%` }} />
       </div>
       {total > 0 && progress === 100 && (
-        <p className="mt-5 text-sm font-medium text-[#16a34a]">🎉 Day Unlocked!</p>
+        <p className="mt-5 text-sm font-medium text-[color:var(--success)]">Day Unlocked!</p>
       )}
     </div>
   )
