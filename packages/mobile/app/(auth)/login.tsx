@@ -1,75 +1,85 @@
-import { useState } from 'react'
+import { makeRedirectUri } from 'expo-auth-session'
+import * as WebBrowser from 'expo-web-browser'
 import { Link, useRouter } from 'expo-router'
-import {
-  View,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  KeyboardAvoidingView,
-  Platform,
-  ScrollView,
-  StyleSheet,
-} from 'react-native'
-import { supabase } from '../../src/lib/supabase'
-import { useAuth } from '../../src/context/AuthContext'
+import { useState } from 'react'
+import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, View } from 'react-native'
+import { Button } from '../../components/ui/Button'
+import { Card } from '../../components/ui/Card'
+import { Input } from '../../components/ui/Input'
+import { colors } from '../../constants/colors'
+import { useAuth } from '../../hooks/useAuth'
+import { supabase } from '../../lib/supabase'
 
-export default function Login() {
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [error, setError] = useState<string | null>(null)
-  const [loading, setLoading] = useState(false)
+WebBrowser.maybeCompleteAuthSession()
+
+export default function LoginScreen() {
   const router = useRouter()
   const { session } = useAuth()
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [error, setError] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [googleLoading, setGoogleLoading] = useState(false)
 
   if (session) {
     router.replace('/(app)/dashboard')
   }
 
   async function handleLogin() {
-    setLoading(true)
-    setError(null)
-    const { error } = await supabase.auth.signInWithPassword({ email, password })
-    setLoading(false)
-    if (error) {
-      setError(error.message)
-    } else {
+    try {
+      setLoading(true)
+      setError('')
+      const result = await supabase.auth.signInWithPassword({ email, password })
+      if (result.error) throw result.error
       router.replace('/(app)/dashboard')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to sign in.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  async function handleGoogleLogin() {
+    try {
+      setGoogleLoading(true)
+      setError('')
+      const result = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: makeRedirectUri(),
+        },
+      })
+      if (result.error) throw result.error
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to start Google sign in.')
+    } finally {
+      setGoogleLoading(false)
     }
   }
 
   return (
     <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-        <View style={styles.card}>
-          <Text style={styles.title}>Welcome back</Text>
-          <Text style={styles.subtitle}>Sign in to access your focus dashboard.</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="Email"
-            placeholderTextColor="#94a3b8"
-            keyboardType="email-address"
-            autoCapitalize="none"
-            value={email}
-            onChangeText={setEmail}
-          />
-          <TextInput
-            style={styles.input}
-            placeholder="Password"
-            placeholderTextColor="#94a3b8"
-            secureTextEntry
-            value={password}
-            onChangeText={setPassword}
-          />
+        <Card style={styles.card}>
+          <Text style={styles.brand}>FOCUSGATE</Text>
+          <Text style={styles.title}>Sign in and reclaim your attention.</Text>
+          <Text style={styles.subtitle}>Your daily tasks, vision cards, and future mobile blocker all live here.</Text>
 
-          {error && <Text style={styles.error}>{error}</Text>}
-          <TouchableOpacity style={styles.primaryButton} onPress={handleLogin} disabled={loading}>
-            <Text style={styles.primaryButtonText}>{loading ? 'Signing in…' : 'Sign in'}</Text>
-          </TouchableOpacity>
+          <View style={styles.form}>
+            <Input placeholder="Email" keyboardType="email-address" autoCapitalize="none" value={email} onChangeText={setEmail} />
+            <Input placeholder="Password" secureTextEntry value={password} onChangeText={setPassword} />
+            {error ? <Text style={styles.error}>{error}</Text> : null}
+            <Button label="Sign In" onPress={() => void handleLogin()} loading={loading} />
+            <Button label="Continue with Google" onPress={() => void handleGoogleLogin()} loading={googleLoading} variant="secondary" />
+          </View>
 
           <Text style={styles.linkText}>
-            Don’t have an account? <Text style={styles.link} onPress={() => router.push('/(auth)/signup')}>Sign up</Text>
+            Don&apos;t have an account?{' '}
+            <Link href="/(auth)/signup" style={styles.link}>
+              Sign up
+            </Link>
           </Text>
-        </View>
+        </Card>
       </ScrollView>
     </KeyboardAvoidingView>
   )
@@ -78,7 +88,7 @@ export default function Login() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0a0a14',
+    backgroundColor: colors.bg,
   },
   content: {
     flexGrow: 1,
@@ -86,56 +96,39 @@ const styles = StyleSheet.create({
     padding: 24,
   },
   card: {
-    backgroundColor: '#111827',
-    borderRadius: 24,
-    padding: 24,
-    shadowColor: '#000',
-    shadowOpacity: 0.18,
-    shadowRadius: 32,
-    elevation: 10,
+    gap: 14,
+  },
+  brand: {
+    color: colors.purpleLight,
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 3,
   },
   title: {
-    color: '#f8fafc',
-    fontSize: 32,
+    color: colors.text,
+    fontSize: 30,
     fontWeight: '700',
-    marginBottom: 12,
   },
   subtitle: {
-    color: '#cbd5e1',
-    fontSize: 16,
-    marginBottom: 24,
+    color: colors.textMuted,
+    fontSize: 15,
+    lineHeight: 22,
   },
-  input: {
-    backgroundColor: '#0f172a',
-    color: '#f8fafc',
-    padding: 16,
-    borderRadius: 18,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(148, 163, 184, 0.16)',
+  form: {
+    gap: 12,
+    marginTop: 10,
   },
   error: {
-    color: '#fca5a5',
-    marginBottom: 16,
-  },
-  primaryButton: {
-    backgroundColor: '#7c3aed',
-    borderRadius: 18,
-    paddingVertical: 16,
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  primaryButtonText: {
-    color: '#f8fafc',
-    fontSize: 16,
-    fontWeight: '700',
+    color: colors.red,
+    fontSize: 13,
   },
   linkText: {
-    color: '#cbd5e1',
+    color: colors.textMuted,
     textAlign: 'center',
+    marginTop: 8,
   },
   link: {
-    color: '#a78bfa',
+    color: colors.purpleLight,
     fontWeight: '700',
   },
 })

@@ -12,6 +12,7 @@ const navigation = [
 
 export default function MainLayout() {
   const { signOut } = useAuth()
+  const extensionInstallUrl = import.meta.env.VITE_EXTENSION_INSTALL_URL ?? ''
   const [theme, setTheme] = useState<'dark' | 'light'>(() => {
     const stored = window.localStorage.getItem('focusgate-theme')
     return stored === 'light' ? 'light' : 'dark'
@@ -79,9 +80,25 @@ export default function MainLayout() {
 
       <main className="mx-auto max-w-6xl px-4 py-10 sm:px-6">
         <div className="mb-8 rounded-[32px] border border-[color:var(--border)] bg-[color:var(--card)]/92 p-6 glass-panel-dark theme-shadow">
-          <p className="text-sm text-[color:var(--muted)]">
-            Use the extension icon to configure app blocking. Your daily tasks and vision cards live here in the FocusGate app.
-          </p>
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <p className="text-sm text-[color:var(--muted)]">
+              The web app is your FocusGate control panel. Configure tasks, blocked links, and vision cards here. After you connect the extension once, it can keep syncing and blocking independently.
+            </p>
+            {extensionInstallUrl ? (
+              <a
+                href={extensionInstallUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="rounded-full bg-gradient-to-r from-[color:var(--accent)] to-[color:var(--accent-strong)] px-4 py-2 text-sm font-semibold text-white shadow-[0_12px_30px_rgba(139,92,246,0.2)] transition hover:brightness-110"
+              >
+                Install Extension
+              </a>
+            ) : (
+              <span className="text-xs text-[color:var(--muted)]">
+                Load the unpacked extension from <code>packages/extension</code>, then open this app once to connect your account.
+              </span>
+            )}
+          </div>
         </div>
         <Outlet />
       </main>

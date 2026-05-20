@@ -67,6 +67,13 @@
                 color: #64748b;
             }
 
+            .error-text {
+                margin-top: 10px;
+                color: #fda4af;
+                font-size: 12px;
+                display: none;
+            }
+
             .row {
                 display: flex;
                 gap: 8px;
@@ -146,9 +153,10 @@
 
         <section class="panel">
             <div id="status-badge" class="badge badge-waiting">Waiting for Task Sync</div>
-            <p id="status-detail" style="margin-top: 10px">Open the FocusGate dashboard in this browser so the extension can sync today's tasks.</p>
+            <p id="status-detail" style="margin-top: 10px">Open the FocusGate dashboard once to connect your account to the extension.</p>
             <div id="task-stats" class="meta">0/0 tasks completed</div>
             <div id="sync-meta" class="meta">Not synced yet</div>
+            <div id="sync-error" class="error-text"></div>
         </section>
 
         <section class="panel">

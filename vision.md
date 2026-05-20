@@ -1,227 +1,357 @@
-## FocusGate — Intelligent App & URL Blocker with Dynamic Block Screen
+## FocusGate Vision And Build Status
 
-### Current Project Status (Updated: May 10, 2026)
+FocusGate is a cross-platform focus system with three layers:
 
-#### ✅ Completed Features
+- the web app is the control center
+- the browser extension is the live enforcement layer for distracting URLs
+- the mobile app is the companion app today and the future native enforcement layer
+- Supabase is the shared backend and source of truth
 
-**Project Setup & Infrastructure:**
+This document tracks both product intent and the current implementation reality in the repo.
 
-- Monorepo scaffold with PNPM workspaces (packages/mobile, /web, /extension)
-- Supabase project setup with production-ready schema (users, tasks, block_attempts, vision_cards, quotes, user_settings, pomodoro_sessions, location_rules, accountability_requests)
-- Environment configuration (.env files for all packages)
-- Tailwind CSS setup and full conversion for web app styling
+## Product Goal
 
-**Web App (React + Vite + TypeScript):**
+The goal is not just to block distractions. FocusGate should interrupt the distraction loop with a personalized screen that reminds the user:
 
-- Complete auth flow: Email/password signup/login + Google OAuth integration
-- Task management system: Add, toggle, delete up to 7 daily tasks with real-time Supabase sync
-- Dashboard with streak tracking (consecutive days of task completion without bypasses)
-- Responsive design with dark theme and Tailwind CSS only
-- Protected routes and session management
+- what they still need to finish today
+- why they said they want to focus
+- what route or app is currently being blocked
+- what their current habits are likely building next
 
-**Mobile App (React Native + Expo):**
+The longer-term product direction is:
 
-- Auth skeleton with Supabase integration (login/signup forms)
-- Basic navigation setup with Expo Router
+- web = setup, management, onboarding, analytics, install surface
+- extension = independent web blocking runtime
+- mobile = native Android/iOS blocker with the same motivation system
+- future simulator = the emotional accountability layer that turns commitments into believable hell/heaven projections
 
-**Extension (Chrome Manifest V3):**
+## Combined Product Direction
 
-- Placeholder files and manifest structure
+FocusGate is now moving from "task-gated blocker" toward a more complete personal focus OS:
 
-#### 🔄 Active Working Features
+- a user sets one active main goal
+- each day they commit a small number of promises that matter
+- those commitments sync into the live blocker tasks
+- the app scores how much of today's promise was actually kept
+- that score powers a future-self intervention shown on the dashboard and the block screen
 
-**Web App:**
+The first implementation of the future simulator is text-first:
 
-- Fully functional auth and task system
-- Streak calculation and display
-- Real-time data sync with Supabase
-- Tailwind-styled UI components
+- `user_goals` stores the active goal and intensity setting
+- `daily_commits` stores the promises for today and links them to real task rows
+- `daily_logs` stores the computed daily score
+- `future_generations` stores generated hell/heaven narratives that can later feed image and video generation
 
-**Mobile App:**
+This keeps the current stack intact while creating the data and UX loop needed for future AI-generated images or videos.
 
-- Basic auth flow (needs completion of full task integration)
+## Current Build Snapshot
 
-**Extension:**
+### Overall
 
-- Placeholder (needs blocking engine implementation)
+- Web app: strong MVP progress
+- Extension: working MVP with independent blocked-screen runtime
+- Mobile app: real companion app progress, but not yet a real blocker
+- Database: broad schema prepared, but only part of it is active
 
-#### 📋 Remaining Work (Prioritized)
+### Completion Estimate
 
-**Phase 1: Core Blocking Engine**
+- Web: about 80%
+- Extension: about 75%
+- Mobile companion app: about 45-50%
+- Mobile native blocking/enforcement: about 0-10%
+- Database schema: about 80%
 
-1. **Dynamic Block Screen Component** - Shared React component for mobile/web/extension showing:
-    - Live incomplete tasks with checkboxes
-    - Vision board carousel (user-uploaded images + captions)
-    - Rotating motivational quotes
-    - Emergency bypass with cooldown and reason logging
+These are implementation estimates, not launch estimates.
 
-2. **Chrome Extension Blocking**
-    - URL prefix-based blocking (YouTube Shorts, Instagram Reels, etc.)
-    - Content script injection of block screen on blocked URLs
-    - Background service worker for block list management
+## What Is Implemented Right Now
 
-3. **Mobile Blocking (Android)**
-    - Accessibility Service for app detection
-    - Full-screen overlay with Dynamic Block Screen
-    - Curated blocked app package lists
+### Web
 
-**Phase 2: Feature Completion** 4. Vision cards upload and management (Supabase Storage) 5. Quotes integration (daily rotation from seeded table) 6. Block screen customization settings 7. Mobile task system completion 8. iOS Screen Time API integration
+Implemented:
 
-**Phase 3: Advanced Features** 9. Accountability partner system (friend approvals for bypasses) 10. Group time limits (combined limits across app categories) 11. Pomodoro integration (focus sessions with strict blocking) 12. Location-aware blocking (GPS-based activation) 13. Block groups and custom URL/app management
+- Supabase auth context
+- login and signup UI
+- Google OAuth entrypoint
+- protected routes
+- dashboard shell
+- daily task add, toggle, delete
+- progress card
+- streak calculation UI
+- blocked-link management backed by Supabase
+- vision-card upload
+- vision-card reorder and delete
+- block-screen preview builder
+- block-screen preference saving through `user_settings`
+- shared web block-screen route for preview/testing
 
-**Phase 4: Polish & Launch** 14. Testing across platforms 15. Performance optimization 16. Deployment setup (web hosting, app stores, extension store) 17. User onboarding flow
+Current reality:
 
-#### 🎯 Next Immediate Tasks
+- the web app is the setup and management surface
+- the web preview exists for iteration, but the real blocked experience is now extension-owned
+- tasks, blocked rules, vision cards, and block-screen settings are all editable from the web app
 
-- Complete mobile app task system and full auth flow
-- Build shared Dynamic Block Screen component
-- Implement Chrome extension blocking logic
-- Add vision cards upload functionality
-- Integrate quotes system
+Not done or not production-ready:
 
----
+- no polished onboarding flow
+- no full analytics/reporting surface yet
+- no extension installation flow beyond manual/dev setup
+- no fully hardened error-recovery UX around every Supabase failure state
 
-### Project Overview
+### Extension
 
-Build FocusGate, a cross-platform distraction blocker app. The core differentiator is the **Dynamic Block Screen** — when a user tries to open a blocked app or URL, instead of a generic "you're blocked" message, they see a personalized screen showing: (1) their live incomplete tasks for today, (2) their vision board cards (user-uploaded images with captions), and (3) a rotating motivational quote. The user must either complete a task or wait out a configurable cooldown before getting an emergency bypass.
+Implemented:
 
-### Stack
+- Manifest V3 setup
+- content script on all pages
+- background service worker
+- URL prefix matching
+- local cached blocking state
+- popup with blocking status
+- sync bridge from the web app through `window.postMessage`
+- remote refresh from Supabase REST
+- redirect to the extension's own `blocked.html`
+- extension-owned blocked screen that loads tasks, cards, quotes, and settings from Supabase-backed cached state
+- task completion from inside the blocked screen
 
-- React Native (Expo) for mobile
-- React + Vite + TypeScript for desktop web/extension
-- Supabase (PostgreSQL) as backend
-- Tailwind CSS + shadcn/ui for UI
+Current reality:
 
-### Feature Set to Build
+- the extension owns the live blocked flow once it has bootstrap data
+- the blocked screen runs inside the extension, not the web app
+- the extension still uses the web app once for bootstrap of app config/session data
 
-#### 1. Auth & User Setup (Supabase Auth)
+Not done or not production-ready:
 
-- Email/password + Google OAuth login
-- After signup: onboarding flow to set 3 "why I want focus" vision cards (upload image + caption)
-- Users pick their default blocked app categories (Social, Shorts, Games, etc.)
+- no self-contained auth/bootstrap flow inside the extension
+- no store/deployment packaging strategy
+- no extension-specific settings UI beyond popup status
+- background sync still depends on network and bootstrap state being healthy
 
-#### 2. Task System
+### Mobile
 
-- Daily task list: user adds 3–5 tasks each morning (title, optional time estimate)
-- Tasks have: `id, user_id, title, completed (bool), date, created_at`
-- Completing all tasks of the day triggers a "Day Unlocked" celebration screen and relaxes all blocks
-- Tasks sync to Supabase in real-time
+Implemented:
 
-#### 3. Blocking Engine
+- Expo Router app shell with tab navigation
+- Supabase auth context
+- login screen
+- signup screen
+- route gate from index to auth or dashboard
+- dashboard screen backed by live tasks/settings/blocked-summary data
+- task management screen with add/toggle/delete flow
+- vision-card management screen with image-picker permission flow and Supabase upload/delete
+- settings screen backed by `user_settings`
+- reusable mobile `BlockScreen` component with quote/tasks/cards/bypass UI
+- React Query hooks for auth, tasks, settings, and vision cards
 
-_Desktop (Chrome Extension):_
+Current reality:
 
-- URL prefix-based blocking (e.g., `youtube.com/shorts`, `instagram.com/reels`, `tiktok.com`)
-- User can add custom URL prefixes to block list
-- When a blocked URL is visited, the tab is replaced by the Dynamic Block Screen (full-page HTML injection or redirect to extension page)
-- Preset blocked URL lists: Shorts (YouTube Shorts, Instagram Reels, TikTok), Social (Twitter/X trending, Reddit front page), and Custom
+- mobile is now a working companion app for account, tasks, vision cards, and preferences
+- mobile is not yet a true blocker
+- the mobile block-screen component exists, but it is not wired into a real Android or iOS enforcement runtime
 
-_Mobile (React Native / Expo):_
+Not done or blocked:
 
-- Android: Use Accessibility Service to detect foreground app changes. When a blocked app (by package name) comes to foreground, show a full-screen overlay Activity displaying the Dynamic Block Screen
-- Maintain a curated list of blocked package names per category (Social: `com.instagram.android`, `com.zhiliaoapp.musically`, etc.; Games: top 20 package names)
-- iOS: Use Screen Time API (FamilyControls + DeviceActivityMonitor) to enforce app limits. Show a nudge notification + in-app motivational message when limit is reached
+- no Android Accessibility Service
+- no foreground app detection
+- no real blocked-app overlay
+- no package-name blocklist enforcement
+- no iOS Screen Time / FamilyControls integration
+- no real app blocking permission flow yet
 
-#### 4. Dynamic Block Screen (the core differentiator)
+### Database
 
-This is the screen shown when a block is triggered. It must feel beautiful, not punishing.
+Implemented in SQL:
 
-Layout (full screen, dark theme with subtle gradient):
+- users
+- user_settings
+- tasks
+- block_groups
+- block_group_items
+- block_sessions
+- block_attempts
+- pomodoro_sessions
+- vision_cards
+- quotes
+- accountability_pairs
+- accountability_requests
+- location_rules
+- RLS policies
+- signup trigger creating `users` and `user_settings`
+- seeded quotes
+- storage bucket and policy for vision cards
 
-- Top section: Rotating motivational quote (changes every 24h, pulled from a seeded `quotes` table in Supabase — seed with 100+ high-quality quotes from stoics, builders, athletes)
-- Middle section: "Your tasks for today" — live list of today's incomplete tasks from Supabase, each with a checkbox. If a task is checked here, it updates in the main app too.
-- Bottom section: Vision board carousel — user's uploaded vision cards (image + caption) shown as swipeable cards
-- Footer: "Emergency Unlock" button — tapping it shows a 30-second countdown + textarea asking "What are you doing instead?" — after the countdown, they can bypass. This bypass is logged to `block_attempts` table with `bypassed: true` and their typed reason.
+Actually used by the current app code:
 
-The block screen should be a shared React Native component (mobile) and a shared React component injected via the extension (desktop). Keep the design consistent.
+- `users`
+- `user_settings`
+- `tasks`
+- `block_groups`
+- `block_group_items`
+- `vision_cards`
+- `quotes`
+- `block_attempts` in mobile/web bypass-related flows and legacy support
 
-#### 5. Block Screen Customization
+Not yet used by active product code:
 
-- Settings page: User can choose which elements appear on their block screen (toggle: show tasks / show vision cards / show quotes)
-- User can set the emergency bypass cooldown duration (0s, 15s, 30s, 60s, or "disabled")
-- User can set whether bypass requires a typed reason or not
-- User can upload up to 10 vision cards (image + caption). Images stored in Supabase Storage.
+- `block_sessions`
+- `pomodoro_sessions`
+- `accountability_pairs`
+- `accountability_requests`
+- `location_rules`
 
-#### 6. Community-Requested Features to Include:
+## Logic And Flow
 
-- **Group time limits:** User can create a "Block Group" (e.g., "Social Media") and assign a combined daily time limit across all apps in the group (not per-app). Track cumulative time in `block_sessions`.
-- **Accountability partner:** User can invite one friend by email. When they attempt an emergency bypass, the friend gets a push notification: "[Name] is trying to unlock Instagram. Approve?" Friend can approve/deny from their own app. Implement with Supabase Edge Functions + Expo Push Notifications.
-- **Pomodoro integration:** In the app, user can start a "Focus Session" (25 min default, configurable). During the session, all blocks are strictly enforced with no bypass available. After the session, a 5-minute break is auto-allowed.
-- **Location-aware blocking:** User can set a schedule that only activates when they are at a specific location (Home, Office, custom GPS coordinate with 200m radius). Use Expo Location in the background.
-- **Streak tracking:** Track consecutive days where the user completed all tasks without bypassing any blocks. Show streak count on home screen with a fire emoji.
+### User flow
 
-#### 7. Supabase Schema
+1. User signs in with Supabase.
+2. The SQL trigger creates the matching `public.users` and `user_settings` rows if this is a new account.
+3. User creates today's tasks in the web app or mobile app.
+4. User adds blocked URL prefixes in the web app.
+5. User uploads vision cards in the web app or mobile app.
+6. App saves those records in Supabase.
+7. While the FocusGate web app is open, it posts session details, public app config, task summary, and blocked URL summary to the page.
+8. The extension content script captures those page messages and forwards them to the background worker.
+9. The background worker stores them locally and refreshes tasks, rules, settings, quotes, and cards from Supabase REST using the cached session.
+10. When a blocked URL is visited and there are pending tasks, the extension redirects the user to the extension's own `blocked.html` route.
+11. The extension blocked page renders the real block screen.
+12. From that screen the user can:
+    - complete tasks
+    - view the quote of the day
+    - view vision cards
 
-Create these tables:
+### Blocking flow
 
-```sql
-users (id uuid PK, email text, created_at timestamp)
-tasks (id uuid PK, user_id uuid FK, title text, completed bool default false, date date, created_at timestamp)
-block_sessions (id uuid PK, user_id uuid FK, app_or_url text, started_at timestamp, ended_at timestamp)
-block_attempts (id uuid PK, user_id uuid FK, app_or_url text, timestamp timestamp, bypassed bool, bypass_reason text)
-vision_cards (id uuid PK, user_id uuid FK, image_url text, caption text, sort_order int)
-quotes (id uuid PK, text text, author text)
-accountability_pairs (id uuid PK, user_id uuid FK, partner_id uuid FK, created_at timestamp)
-block_groups (id uuid PK, user_id uuid FK, name text, daily_limit_minutes int)
-block_group_items (id uuid PK, group_id uuid FK, app_or_url text)
+The current browser blocking logic is:
+
+1. Normalize the current URL and each saved blocked rule.
+2. Determine whether today's synced task state has pending tasks.
+3. Ignore the URL if there are no pending tasks.
+4. If a blocked rule matches, redirect the tab to:
+
+```text
+chrome-extension://<extension-id>/blocked.html?url=<original>&rule=<matched-rule>
 ```
 
-Enable Row Level Security on all tables. Users can only read/write their own rows.
+5. The extension blocked screen becomes the intervention surface.
 
-#### 8. Tech Notes
+### Mobile flow
 
-- Use Supabase JS client (`@supabase/supabase-js`) everywhere
-- Store Supabase URL and anon key in `.env` files (never hardcode)
-- Use Expo Router for mobile navigation
-- The Chrome extension is a separate `packages/extension` folder in the monorepo. Use Manifest V3. The extension's background service worker fetches the user's block list and tasks from Supabase on startup and caches locally. The content script injects the block screen.
-- For the extension block screen: inject a full-page `div` with `z-index: 999999` when a blocked URL prefix is matched. Render the Dynamic Block Screen React component inside it using a Shadow DOM to avoid CSS conflicts.
-- Use React Query (TanStack Query) for data fetching and caching throughout
-- Style with Tailwind CSS (NativeWind on mobile). Dark theme by default.
+The current mobile app flow is:
 
-#### 9. MVP Scope (Updated Progress)
+1. Sign in with Supabase
+2. Manage tasks
+3. Manage vision cards
+4. Manage block-screen settings
+5. View dashboard summaries
 
-**✅ Completed:**
+The current mobile app does not yet:
 
-1. Supabase project setup + schema + RLS policies
-2. Auth flow (signup/login/logout) - Web app complete, mobile skeleton
-3. Task CRUD (add, complete, delete daily tasks) - Web app complete
-4. Dynamic Block Screen component - Planned, not yet built
+- ask for Android accessibility blocking permission
+- detect the foreground app
+- block other installed apps
+- show a true system-level overlay on blocked apps
 
-**🔄 In Progress:** 5. Chrome extension with URL prefix blocking + block screen injection 6. Vision card upload + management 7. Android Accessibility Service overlay 8. Block Screen customization settings
+## Data Sync Flow Between Web And Extension
 
-**📋 Remaining:** 9. Community features (group limits, accountability, Pomodoro, location, streaks)
+Web app emits:
 
-#### Design Direction
+- `FOCUSGATE_SYNC_SESSION`
+- `FOCUSGATE_SYNC_TASK_STATE`
+- `FOCUSGATE_SYNC_BLOCKED_URLS`
+- `FOCUSGATE_SYNC_APP_CONFIG`
 
-Dark mode. Premium feel. Think Notion meets Linear. Use Inter font. Subtle gradients (dark navy to deep purple). The block screen should feel like a _moment of pause_, not a wall — it's designed to make the user feel inspired and refocused, not punished.
+Extension content script forwards those into runtime messages:
 
-### Competitive Landscape
+- `syncSession`
+- `syncTaskState`
+- `syncBlockedUrls`
+- `syncAppConfig`
 
-- AppBlock: Static text + emoji, no live data.
-- BlockBud: Upload image, no task integration.
-- one sec: Breathing delay, no task display.
-- Opal: Generic screen, no tasks.
-- Taskfulness: Type reason before unlock, AI scores, no tasks shown.
-- Cold Turkey: Hard block, zero personalization.
+Extension background worker stores:
 
-Gap: Dynamically personalized block screen with live tasks, vision cards, rotating quotes.
+- `extensionSession`
+- `appConfig`
+- `taskSyncState`
+- `blockedUrls`
+- `blockedScreenData`
+- `temporaryBypasses`
 
-### Why It Works Psychologically
+This means the extension owns the actual blocked experience, while the web app remains the bootstrap and management layer.
 
-1. Static guilt fails due to habituation.
-2. Live task list creates implementation intention friction.
-3. Vision cards activate identity-level motivation.
-4. Rotating quotes maintain novelty.
+## How Everything Connects
 
-Combination creates pattern interrupt.
+### Web to Supabase
 
-### Community Requested Features
+- auth is handled through the Supabase JS client
+- tasks are read and written directly from the `tasks` table
+- blocked links are stored in `block_groups` and `block_group_items`
+- vision cards use Supabase Storage plus a `vision_cards` table record
+- quotes are read from the seeded `quotes` table
+- block-screen visibility and bypass settings are read and saved through `user_settings`
 
-1. Shared accountability (Friend Controls style).
-2. Combined time limits across app groups.
-3. Location-aware blocking.
-4. Uninstall protection.
-5. Cross-platform sync.
-6. Strong Android support.
-7. Pomodoro integration.
-8. Emergency unlock with friction.
+### Web to Extension
+
+- the web layout mounts `ExtensionTaskSync`
+- `ExtensionTaskSync` posts session, app config, task summary, and blocked rules to the page
+- the extension content script listens and forwards those payloads to the background worker
+
+### Extension to Supabase
+
+- the extension background worker can call Supabase Auth refresh
+- it can fetch tasks from `tasks`
+- it can fetch settings from `user_settings`
+- it can fetch blocked rules from `block_groups` and `block_group_items`
+- it can fetch cards from `vision_cards`
+- it can fetch the quote of the day from `quotes`
+- it does this with direct REST requests using the cached session token
+
+### Mobile to Supabase
+
+- mobile auth is handled through Supabase
+- mobile tasks use the `tasks` table
+- mobile vision cards use `vision_cards` plus Supabase Storage
+- mobile settings use `user_settings`
+- mobile dashboard reads blocked URL summaries from `block_groups` and `block_group_items`
+
+## Important Reality Checks
+
+These are the biggest current project constraints:
+
+- The extension is real, but it is still dev-coupled to the local web app URL for bootstrap.
+- The extension no longer depends on the web app for the blocked-screen runtime.
+- Mobile is much farther along as a companion app than older docs suggested.
+- Mobile is still not a real Android/iOS blocker.
+- There is no Android native accessibility service or iOS enforcement layer yet.
+- There is no shared package yet for reusable cross-platform UI or business logic.
+- The repo still contains future-facing schema for more advanced focus features that are not yet shipped.
+
+## Next Recommended Build Order
+
+1. Make extension bootstrap and config flow cleaner than the current web-assisted setup.
+2. Keep web as the source of truth for setup, preferences, blocked rules, and installation flow.
+3. Decide whether mobile remains a companion app first or becomes the next enforcement priority.
+4. If mobile blocking is the next milestone:
+   - add Android Accessibility Service
+   - add blocked package-name model
+   - add native overlay/block runtime
+   - add device permission onboarding
+5. After that, move into analytics, Pomodoro, accountability, and location-aware rules.
+
+## Launch Readiness
+
+This repo is a strong prototype, not a launch-ready product.
+
+What feels close:
+
+- web dashboard workflow
+- blocked-link management
+- vision-card management
+- extension URL blocking
+- extension-owned blocked-screen experience
+- mobile companion app flows
+
+What still makes it pre-launch:
+
+- extension bootstrap is environment-coupled
+- mobile enforcement is not implemented
+- app-store / chrome-store packaging is not in place
+- advanced feature tables exist without corresponding shipped flows

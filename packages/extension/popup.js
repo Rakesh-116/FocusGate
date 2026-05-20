@@ -6,14 +6,15 @@ const statusBadge = document.getElementById("status-badge");
 const statusDetail = document.getElementById("status-detail");
 const taskStats = document.getElementById("task-stats");
 const syncMeta = document.getElementById("sync-meta");
+const syncError = document.getElementById("sync-error");
 
 let currentPatterns = [];
 
-function formatTime(isoString) {
+function formatTimeLabel(isoString, prefix = "Last synced") {
     if (!isoString) return "Not synced yet";
     const date = new Date(isoString);
     if (Number.isNaN(date.getTime())) return "Not synced yet";
-    return `Last synced ${date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`;
+    return `${prefix} ${date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`;
 }
 
 function renderPatterns() {
@@ -51,13 +52,44 @@ function renderBlockingState(blockingState) {
         statusBadge.className = "badge badge-complete";
         statusDetail.textContent = "All of today's tasks are complete. Blocked URLs are currently unlocked.";
     } else {
-        statusBadge.textContent = "Waiting for Task Sync";
+        statusBadge.textContent = "Syncing";
         statusBadge.className = "badge badge-waiting";
-        statusDetail.textContent = "Open the FocusGate dashboard so tasks and blocked links sync into the extension.";
+        statusDetail.textContent = "The extension is waiting for account bootstrap or a fresh sync.";
     }
 
     taskStats.textContent = `${completed}/${total} tasks completed`;
-    syncMeta.textContent = formatTime(blockingState?.lastSyncedAt);
+    syncMeta.textContent = formatTimeLabel(blockingState?.lastSyncedAt);
+}
+
+function renderSyncMeta(remoteSyncMeta) {
+    if (remoteSyncMeta?.lastSuccessfulAt) {
+        syncMeta.textContent = formatTimeLabel(remoteSyncMeta.lastSuccessfulAt);
+    } else if (remoteSyncMeta?.lastAttemptedAt) {
+        syncMeta.textContent = formatTimeLabel(remoteSyncMeta.lastAttemptedAt, "Last attempted");
+    } else {
+        syncMeta.textContent = "Not synced yet";
+    }
+
+    if (remoteSyncMeta?.lastError) {
+        syncError.textContent = remoteSyncMeta.lastError;
+        syncError.style.display = "block";
+    } else {
+        syncError.textContent = "";
+        syncError.style.display = "none";
+    }
+}
+
+function applyExtensionState(response) {
+    currentPatterns = Array.isArray(response?.blockedUrls) ? response.blockedUrls : [];
+    renderPatterns();
+    renderBlockingState(response?.blockingState ?? null);
+    renderSyncMeta(response?.remoteSyncMeta ?? null);
+
+    if (response?.setupReady === false) {
+        statusBadge.textContent = "Connect Account";
+        statusBadge.className = "badge badge-waiting";
+        statusDetail.textContent = "Open the FocusGate web app once to connect your account. After that, the extension refreshes on its own.";
+    }
 }
 
 function loadExtensionState() {
@@ -66,12 +98,11 @@ function loadExtensionState() {
             currentPatterns = [];
             renderPatterns();
             renderBlockingState(null);
+            renderSyncMeta(null);
             return;
         }
 
-        currentPatterns = Array.isArray(response?.blockedUrls) ? response.blockedUrls : [];
-        renderPatterns();
-        renderBlockingState(response?.blockingState ?? null);
+        applyExtensionState(response);
     });
 }
 
@@ -79,6 +110,14 @@ openAppButton?.addEventListener("click", () => {
     chrome.runtime.sendMessage({ type: "openApp" });
 });
 
-refreshButton?.addEventListener("click", loadExtensionState);
+refreshButton?.addEventListener("click", () => {
+    chrome.runtime.sendMessage({ type: "syncNow" }, (response) => {
+        if (chrome.runtime.lastError || !response) {
+            loadExtensionState();
+            return;
+        }
+        applyExtensionState(response);
+    });
+});
 
 loadExtensionState();

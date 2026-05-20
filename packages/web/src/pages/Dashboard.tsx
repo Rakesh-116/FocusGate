@@ -6,6 +6,8 @@ import { useTasks } from '../hooks/useTasks'
 import { TaskList } from '../components/TaskList'
 import { TaskProgress } from '../components/TaskProgress'
 import { BlockedLinksManager } from '../components/BlockedLinksManager'
+import { FocusFuturePanel } from '../components/FocusFuturePanel'
+import { useFocusPlan } from '../hooks/useFocusPlan'
 import { supabase } from '../lib/supabase'
 
 function getToday() {
@@ -14,7 +16,7 @@ function getToday() {
 
 function useStreak(userId: string | null) {
   type StreakTask = { date: string; completed: boolean }
-  type StreakAttempt = { timestamp: string; bypassed: boolean }
+  type StreakAttempt = { attempted_at: string; bypassed: boolean }
 
   return useQuery<number>({
     queryKey: ['streak', userId],
@@ -32,9 +34,9 @@ function useStreak(userId: string | null) {
 
       const { data: attempts, error: attemptsError } = await supabase
         .from('block_attempts')
-        .select('timestamp,bypassed')
+        .select('attempted_at,bypassed')
         .eq('user_id', userId)
-        .gte('timestamp', isoFrom)
+        .gte('attempted_at', isoFrom)
       if (attemptsError) throw attemptsError
 
       const completedByDate = new Map<string, boolean>()
@@ -47,7 +49,7 @@ function useStreak(userId: string | null) {
       const bypassDates = new Set<string>()
       ;(attempts as StreakAttempt[] | null | undefined)?.forEach((attempt) => {
         if (attempt.bypassed) {
-          const date = new Date(attempt.timestamp).toISOString().slice(0, 10)
+          const date = new Date(attempt.attempted_at).toISOString().slice(0, 10)
           bypassDates.add(date)
         }
       })
@@ -75,6 +77,7 @@ export default function Dashboard() {
   const userId = user?.id ?? null
   const { tasks, addTask, toggleTask, deleteTask, isLoading, completedCount, totalCount, maxReached } = useTasks(userId)
   const { data: streak = 0 } = useStreak(userId)
+  const focusPlan = useFocusPlan(userId, streak)
 
   const message = useMemo(() => {
     if (totalCount === 0) return 'Start your first focus task for today.'
@@ -119,6 +122,25 @@ export default function Dashboard() {
           />
           <BlockedLinksManager userId={userId} />
         </main>
+
+        <FocusFuturePanel
+          goal={focusPlan.goal}
+          commits={focusPlan.commits}
+          futures={focusPlan.futures}
+          score={focusPlan.score}
+          outcome={focusPlan.outcome}
+          committedCount={focusPlan.committedCount}
+          completedCount={focusPlan.completedCount}
+          featuredFuture={focusPlan.featuredFuture}
+          isLoading={focusPlan.isLoading}
+          isSavingGoal={focusPlan.isSavingGoal}
+          isGeneratingFuture={focusPlan.isGeneratingFuture}
+          onSaveGoal={focusPlan.saveGoal}
+          onAddCommitment={focusPlan.addCommitment}
+          onToggleCommitment={focusPlan.toggleCommitment}
+          onRemoveCommitment={focusPlan.removeCommitment}
+          onGenerateFuture={focusPlan.generateFuture}
+        />
       </div>
     </div>
   )

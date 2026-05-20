@@ -88,6 +88,14 @@
                 return;
             }
 
+            if (data.type === "FOCUSGATE_SYNC_APP_CONFIG") {
+                safeSendMessage({
+                    type: "syncAppConfig",
+                    payload: data.payload ?? null,
+                });
+                return;
+            }
+
             if (data.type === "FOCUSGATE_TEMP_BYPASS") {
                 safeSendMessage({
                     type: "tempBypass",

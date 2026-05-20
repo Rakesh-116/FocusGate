@@ -7,6 +7,7 @@ import { useAuth } from '../../context/AuthContext'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from '../../lib/supabase'
 import { VisionCardImage } from '../VisionCardImage'
+import { computeDailyScore } from '../../lib/focus'
 
 export interface BlockScreenProps {
   blockedUrl: string
@@ -43,8 +44,13 @@ type UserSettings = {
   show_quotes_on_block_screen: boolean
   show_tasks_on_block_screen: boolean
   show_vision_cards_on_block_screen: boolean
-  bypass_cooldown_seconds: number
-  bypass_requires_reason: boolean
+}
+
+type FuturePreview = {
+  score: number
+  goalTitle: string | null
+  narrative: string | null
+  scenarioType: 'hell' | 'heaven'
 }
 
 const PREVIEW_QUOTE: Quote = {
@@ -72,8 +78,14 @@ const PREVIEW_SETTINGS: UserSettings = {
   show_quotes_on_block_screen: true,
   show_tasks_on_block_screen: true,
   show_vision_cards_on_block_screen: true,
-  bypass_cooldown_seconds: 30,
-  bypass_requires_reason: true,
+}
+
+const PREVIEW_FUTURE: FuturePreview = {
+  score: 67,
+  goalTitle: 'Become an SDE at a strong product company',
+  narrative:
+    'You are in the middle zone. A few more kept promises this week and the story starts looking like a real career breakout instead of another restart.',
+  scenarioType: 'heaven',
 }
 
 function getTodayDate() {
@@ -102,11 +114,6 @@ export default function BlockScreen({
   const queryClient = useQueryClient()
   const [emblaRef] = useEmblaCarousel({ loop: false })
   const [hiddenTaskIds, setHiddenTaskIds] = useState<string[]>([])
-  const [panelOpen, setPanelOpen] = useState(false)
-  const [reason, setReason] = useState('')
-  const [secondsLeft, setSecondsLeft] = useState(0)
-  const [isCounting, setIsCounting] = useState(false)
-  const [showBypassError, setShowBypassError] = useState(false)
   const [allDoneTriggered, setAllDoneTriggered] = useState(false)
   const [previewTasks, setPreviewTasks] = useState<TaskItem[]>(PREVIEW_TASKS)
   const [isLightPreview, setIsLightPreview] = useState(false)
@@ -179,7 +186,7 @@ export default function BlockScreen({
       if (!userId) return PREVIEW_SETTINGS
       const result = await supabase
         .from('user_settings')
-        .select('show_quotes_on_block_screen,show_tasks_on_block_screen,show_vision_cards_on_block_screen,bypass_cooldown_seconds,bypass_requires_reason')
+        .select('show_quotes_on_block_screen,show_tasks_on_block_screen,show_vision_cards_on_block_screen')
         .eq('user_id', userId)
         .single()
       if (result.error) throw result.error
@@ -187,6 +194,58 @@ export default function BlockScreen({
     },
     enabled: !!userId,
     staleTime: 300000,
+  })
+
+  const futurePreviewQuery = useQuery<FuturePreview | null>({
+    queryKey: ['future-preview', userId],
+    queryFn: async () => {
+      if (!userId) return null
+
+      const today = getTodayDate()
+      const [goalResult, futuresResult, commitsResult] = await Promise.all([
+        supabase.from('user_goals').select('title').eq('user_id', userId).eq('is_active', true).limit(1).maybeSingle(),
+        supabase
+          .from('future_generations')
+          .select('scenario_type,narrative,score')
+          .eq('user_id', userId)
+          .eq('date', today)
+          .order('scenario_type', { ascending: true }),
+        supabase
+          .from('daily_commits')
+          .select('id,task:tasks(completed)')
+          .eq('user_id', userId)
+          .eq('date', today),
+      ])
+
+      if (goalResult.error) throw goalResult.error
+      if (futuresResult.error) throw futuresResult.error
+      if (commitsResult.error) throw commitsResult.error
+
+      const commits = commitsResult.data ?? []
+      const completedCount = commits.filter((commit) => {
+        const task = Array.isArray(commit.task) ? commit.task[0] : commit.task
+        return Boolean(task?.completed)
+      }).length
+      const score = computeDailyScore(commits.length, completedCount)
+      const preferredScenario = score >= 70 ? 'heaven' : 'hell'
+      const futures = futuresResult.data ?? []
+      const featuredFuture =
+        futures.find((item) => item.scenario_type === preferredScenario) ??
+        futures.find((item) => item.scenario_type === 'heaven') ??
+        futures[0] ??
+        null
+
+      if (!featuredFuture) return null
+
+      return {
+        score: featuredFuture.score ?? score,
+        goalTitle: goalResult.data?.title ?? null,
+        narrative: featuredFuture.narrative ?? null,
+        scenarioType: featuredFuture.scenario_type as 'hell' | 'heaven',
+      }
+    },
+    enabled: !!userId,
+    refetchOnWindowFocus: true,
   })
 
   const toggleTaskMutation = useMutation({
@@ -211,23 +270,11 @@ export default function BlockScreen({
     },
   })
 
-  const bypassMutation = useMutation({
-    mutationFn: async (bypassReason: string) => {
-      if (previewMode) return null
-      if (!userId) throw new Error('Missing user ID')
-      const now = new Date().toISOString()
-      const result = await supabase
-        .from('block_attempts')
-        .insert([{ user_id: userId, app_or_url: blockedUrl, timestamp: now, bypassed: true, bypass_reason: bypassReason }])
-      if (result.error) throw result.error
-      return result.data
-    },
-  })
-
   const quote = previewMode ? previewQuote ?? PREVIEW_QUOTE : quoteQuery.data
   const settings = previewMode ? previewSettings ?? PREVIEW_SETTINGS : settingsQuery.data ?? PREVIEW_SETTINGS
   const tasks = previewMode ? previewTasksProp ?? previewTasks : tasksQuery.data ?? []
   const visionCards = previewMode ? previewVisionCards ?? PREVIEW_CARDS : visionCardsQuery.data ?? []
+  const futurePreview = previewMode ? PREVIEW_FUTURE : futurePreviewQuery.data
   const visibleTasks = tasks.filter((task) => !hiddenTaskIds.includes(task.id))
   const allComplete = visibleTasks.length > 0 && visibleTasks.every((task) => task.completed)
 
@@ -242,45 +289,8 @@ export default function BlockScreen({
     return undefined
   }, [allComplete, allDoneTriggered, onBypass])
 
-  useEffect(() => {
-    if (!panelOpen) {
-      setReason('')
-      setSecondsLeft(settings.bypass_cooldown_seconds)
-      setIsCounting(false)
-      setShowBypassError(false)
-    }
-  }, [panelOpen, settings.bypass_cooldown_seconds])
-
-  useEffect(() => {
-    if (!panelOpen || settings.bypass_cooldown_seconds <= 0) return undefined
-    if (!isCounting) {
-      setIsCounting(true)
-      setSecondsLeft(settings.bypass_cooldown_seconds)
-    }
-    const timer = window.setInterval(() => {
-      setSecondsLeft((prev) => {
-        if (prev <= 1) {
-          window.clearInterval(timer)
-          return 0
-        }
-        return prev - 1
-      })
-    }, 1000)
-    return () => window.clearInterval(timer)
-  }, [panelOpen, settings.bypass_cooldown_seconds, isCounting])
-
   async function handleToggle(task: TaskItem) {
     await toggleTaskMutation.mutateAsync(task)
-  }
-
-  async function handleSubmitBypass() {
-    if (settings.bypass_requires_reason && !reason.trim()) {
-      setShowBypassError(true)
-      return
-    }
-    onBypass(reason.trim())
-    await bypassMutation.mutateAsync(reason.trim())
-    setPanelOpen(false)
   }
 
   const previewWrapperClass = isLightPreview
@@ -339,6 +349,25 @@ export default function BlockScreen({
         </div>
 
         {settings.show_quotes_on_block_screen && quoteSection}
+
+        {futurePreview && (
+          <section className={`${panelClass} p-8`}>
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <p className={`text-sm uppercase tracking-[0.28em] ${mutedTextClass}`}>Today's future check</p>
+                <h2 className={`mt-3 text-3xl font-semibold ${titleTextClass}`}>
+                  {futurePreview.scenarioType === 'heaven' ? 'Bright path in progress' : 'Warning from your future self'}
+                </h2>
+                <p className={`mt-4 max-w-3xl text-sm leading-7 ${paragraphClass}`}>{futurePreview.narrative}</p>
+              </div>
+              <div className={`rounded-3xl border px-5 py-4 text-center ${isLightPreview ? 'border-slate-200 bg-white/90' : 'border-slate-700 bg-slate-950/90'}`}>
+                <p className={`text-xs uppercase tracking-[0.22em] ${mutedTextClass}`}>Score</p>
+                <p className={`mt-2 text-3xl font-semibold ${titleTextClass}`}>{futurePreview.score}/100</p>
+                {futurePreview.goalTitle ? <p className={`mt-2 max-w-[14rem] text-xs leading-5 ${mutedTextClass}`}>{futurePreview.goalTitle}</p> : null}
+              </div>
+            </div>
+          </section>
+        )}
 
         {settings.show_tasks_on_block_screen && (
           <section className={`${panelClass} p-8`}>
@@ -433,75 +462,6 @@ export default function BlockScreen({
           </section>
         )}
 
-        <motion.section initial={{ opacity: 0, y: 40 }} animate={{ opacity: 1, y: 0 }} className={`${panelClass} p-8`}>
-          <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <p className={`text-sm uppercase tracking-[0.28em] ${mutedTextClass}`}>Emergency bypass</p>
-              <p className={`mt-2 max-w-2xl ${paragraphClass}`}>This should be your last option. Finishing your tasks is the better path.</p>
-            </div>
-          </div>
-
-          {settings.bypass_cooldown_seconds === -1 ? (
-            <div className={`${subPanelClass} p-6 text-sm`}>Bypass disabled. Finish your tasks.</div>
-          ) : (
-            <div className="space-y-4">
-              <button
-                type="button"
-                onClick={() => setPanelOpen((value) => !value)}
-                className={isLightPreview ? 'rounded-3xl border border-slate-300 bg-white px-5 py-4 text-sm font-semibold text-slate-700 transition hover:border-slate-400' : 'rounded-3xl border border-slate-700/70 bg-slate-900/90 px-5 py-4 text-sm font-semibold text-slate-200 transition hover:border-slate-500'}
-              >
-                Emergency unlock
-              </button>
-
-              <AnimatePresence>
-                {panelOpen && (
-                  <motion.div
-                    initial={{ opacity: 0, y: 24 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: 24 }}
-                    className={`${subPanelClass} space-y-4 p-6`}
-                  >
-                    {settings.bypass_cooldown_seconds > 0 && (
-                      <div className={`${subPanelClass} p-4 text-sm`}>
-                        Countdown: <span className={`font-semibold ${titleTextClass}`}>{secondsLeft}s</span>
-                      </div>
-                    )}
-                    <div className="grid gap-2">
-                      <label className={`text-sm font-medium ${titleTextClass}`}>What are you doing instead?</label>
-                      <textarea
-                        value={reason}
-                        onChange={(event) => setReason(event.target.value)}
-                        rows={4}
-                        className={isLightPreview ? 'min-h-[120px] rounded-3xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-800 outline-none ring-1 ring-transparent transition focus:border-[color:var(--accent)] focus:ring-[color:var(--accent)]/30' : 'min-h-[120px] rounded-3xl border border-slate-700/70 bg-slate-950/90 px-4 py-3 text-sm text-slate-100 outline-none ring-1 ring-transparent transition focus:border-violet-400 focus:ring-violet-500/30'}
-                        placeholder="Describe your alternate plan"
-                      />
-                    </div>
-
-                    {showBypassError && <p className="text-sm text-rose-400">Please enter a reason before bypassing.</p>}
-
-                    <div className="flex flex-col gap-3 sm:flex-row sm:justify-end">
-                      <button
-                        type="button"
-                        onClick={() => setPanelOpen(false)}
-                        className={isLightPreview ? 'rounded-3xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:border-slate-400' : 'rounded-3xl border border-slate-700/70 bg-slate-800 px-4 py-3 text-sm font-semibold text-slate-200 transition hover:border-slate-500'}
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        type="button"
-                        onClick={handleSubmitBypass}
-                        disabled={settings.bypass_requires_reason && !reason.trim()}
-                        className="rounded-3xl bg-rose-500/90 px-4 py-3 text-sm font-semibold text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
-                      >
-                        Confirm bypass
-                      </button>
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </div>
-          )}
-        </motion.section>
       </div>
     </div>
   )

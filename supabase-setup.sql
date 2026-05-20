@@ -58,6 +58,76 @@ CREATE TABLE tasks (
 );
 
 -- ============================================
+-- GOALS, COMMITMENTS, FUTURE SIMULATOR
+-- ============================================
+
+CREATE TABLE user_goals (
+  id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE NOT NULL,
+  title TEXT NOT NULL,
+  description TEXT,
+  target_role TEXT,
+  target_company TEXT,
+  intensity INTEGER DEFAULT 3 CHECK (intensity BETWEEN 1 AND 5),
+  is_active BOOLEAN DEFAULT TRUE,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE UNIQUE INDEX user_goals_one_active_goal_idx
+  ON user_goals (user_id)
+  WHERE is_active = TRUE;
+
+CREATE TABLE daily_commits (
+  id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE NOT NULL,
+  goal_id UUID REFERENCES user_goals(id) ON DELETE SET NULL,
+  task_id UUID REFERENCES tasks(id) ON DELETE SET NULL,
+  title TEXT NOT NULL,
+  notes TEXT,
+  date DATE NOT NULL DEFAULT CURRENT_DATE,
+  sort_order INTEGER DEFAULT 0,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  completed_at TIMESTAMP WITH TIME ZONE,
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE TABLE daily_logs (
+  id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE NOT NULL,
+  goal_id UUID REFERENCES user_goals(id) ON DELETE SET NULL,
+  date DATE NOT NULL DEFAULT CURRENT_DATE,
+  committed_count INTEGER DEFAULT 0,
+  completed_count INTEGER DEFAULT 0,
+  score INTEGER DEFAULT 0 CHECK (score BETWEEN 0 AND 100),
+  outcome TEXT CHECK (outcome IN ('hell', 'heaven', 'neutral')) DEFAULT 'neutral',
+  notes TEXT,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  UNIQUE(user_id, date)
+);
+
+CREATE TABLE future_generations (
+  id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE NOT NULL,
+  goal_id UUID REFERENCES user_goals(id) ON DELETE SET NULL,
+  daily_log_id UUID REFERENCES daily_logs(id) ON DELETE SET NULL,
+  date DATE NOT NULL DEFAULT CURRENT_DATE,
+  scenario_type TEXT CHECK (scenario_type IN ('hell', 'heaven')) NOT NULL,
+  status TEXT CHECK (status IN ('draft', 'ready', 'failed')) DEFAULT 'draft',
+  score INTEGER DEFAULT 0 CHECK (score BETWEEN 0 AND 100),
+  streak_days INTEGER DEFAULT 0,
+  intensity INTEGER DEFAULT 3 CHECK (intensity BETWEEN 1 AND 5),
+  prompt TEXT,
+  narrative TEXT NOT NULL,
+  image_url TEXT,
+  video_url TEXT,
+  metadata JSONB DEFAULT '{}',
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- ============================================
 -- BLOCKING
 -- ============================================
 
@@ -189,6 +259,10 @@ CREATE TABLE location_rules (
 ALTER TABLE users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE user_settings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE tasks ENABLE ROW LEVEL SECURITY;
+ALTER TABLE user_goals ENABLE ROW LEVEL SECURITY;
+ALTER TABLE daily_commits ENABLE ROW LEVEL SECURITY;
+ALTER TABLE daily_logs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE future_generations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE block_groups ENABLE ROW LEVEL SECURITY;
 ALTER TABLE block_group_items ENABLE ROW LEVEL SECURITY;
 ALTER TABLE block_sessions ENABLE ROW LEVEL SECURITY;
@@ -210,6 +284,12 @@ CREATE POLICY "settings_all_own" ON user_settings FOR ALL USING (auth.uid() = us
 
 -- Tasks
 CREATE POLICY "tasks_all_own" ON tasks FOR ALL USING (auth.uid() = user_id);
+
+-- Goals, commitments, future simulator
+CREATE POLICY "user_goals_all_own" ON user_goals FOR ALL USING (auth.uid() = user_id);
+CREATE POLICY "daily_commits_all_own" ON daily_commits FOR ALL USING (auth.uid() = user_id);
+CREATE POLICY "daily_logs_all_own" ON daily_logs FOR ALL USING (auth.uid() = user_id);
+CREATE POLICY "future_generations_all_own" ON future_generations FOR ALL USING (auth.uid() = user_id);
 
 -- Block groups
 CREATE POLICY "block_groups_all_own" ON block_groups FOR ALL USING (auth.uid() = user_id);

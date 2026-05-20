@@ -59,6 +59,20 @@ export function ExtensionTaskSync() {
     )
   }
 
+  function postAppConfig() {
+    window.postMessage(
+      {
+        type: 'FOCUSGATE_SYNC_APP_CONFIG',
+        payload: {
+          appOrigin: window.location.origin,
+          supabaseUrl: import.meta.env.VITE_SUPABASE_URL ?? null,
+          supabaseAnonKey: import.meta.env.VITE_SUPABASE_ANON_KEY ?? null,
+        },
+      },
+      window.location.origin,
+    )
+  }
+
   useEffect(() => {
     postSession()
   }, [session])
@@ -72,10 +86,15 @@ export function ExtensionTaskSync() {
   }, [blockedRules])
 
   useEffect(() => {
+    postAppConfig()
+  }, [])
+
+  useEffect(() => {
     function handleSyncRequest(event: MessageEvent) {
       if (event.source !== window) return
       if (event.data?.type !== 'FOCUSGATE_EXTENSION_SYNC_REQUEST') return
 
+      postAppConfig()
       postSession()
       postTaskState()
       postBlockedRules()

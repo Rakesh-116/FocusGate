@@ -19,6 +19,12 @@ type BlockedRuleItem = {
   app_or_url: string
 }
 
+type BlockScreenSettings = {
+  show_quotes_on_block_screen: boolean
+  show_tasks_on_block_screen: boolean
+  show_vision_cards_on_block_screen: boolean
+}
+
 const VISION_CARD_BUCKET = 'vision-cards'
 const DEFAULT_BLOCK_GROUP_NAME = 'FocusGate Web Blocklist'
 const FALLBACK_PREVIEW_CARD: PreviewVisionCard = {
@@ -26,6 +32,11 @@ const FALLBACK_PREVIEW_CARD: PreviewVisionCard = {
   image_url: 'https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=1200&q=80',
   caption: 'Stay connected to your why',
   sort_order: 1,
+}
+const DEFAULT_PREVIEW_SETTINGS: BlockScreenSettings = {
+  show_quotes_on_block_screen: true,
+  show_tasks_on_block_screen: true,
+  show_vision_cards_on_block_screen: true,
 }
 
 export default function BlockScreenPreview() {
@@ -43,6 +54,7 @@ export default function BlockScreenPreview() {
   const [showVisionCards, setShowVisionCards] = useState(true)
   const [uploadMessage, setUploadMessage] = useState('')
   const [newBlockedRule, setNewBlockedRule] = useState('')
+  const [settingsMessage, setSettingsMessage] = useState('')
 
   function normalizeRule(value: string) {
     return value
@@ -94,6 +106,22 @@ export default function BlockScreenPreview() {
         .eq('date', today)
         .order('created_at', { ascending: true })
       return result.data ?? []
+    },
+    enabled: !!userId,
+  })
+
+  const settingsQuery = useQuery<BlockScreenSettings>({
+    queryKey: ['user-settings', userId],
+    queryFn: async () => {
+      if (!userId) return DEFAULT_PREVIEW_SETTINGS
+      const result = await supabase
+        .from('user_settings')
+        .select('show_quotes_on_block_screen,show_tasks_on_block_screen,show_vision_cards_on_block_screen')
+        .eq('user_id', userId)
+        .single()
+
+      if (result.error) throw result.error
+      return result.data as BlockScreenSettings
     },
     enabled: !!userId,
   })
@@ -221,6 +249,31 @@ export default function BlockScreenPreview() {
     },
   })
 
+  const saveSettingsMutation = useMutation<BlockScreenSettings, Error, BlockScreenSettings>({
+    mutationFn: async (settings) => {
+      if (!userId) throw new Error('You must be signed in to save block screen settings.')
+      const result = await supabase
+        .from('user_settings')
+        .update(settings)
+        .eq('user_id', userId)
+        .select('show_quotes_on_block_screen,show_tasks_on_block_screen,show_vision_cards_on_block_screen')
+        .single()
+
+      if (result.error) throw result.error
+      return result.data as BlockScreenSettings
+    },
+    onSuccess: (settings) => {
+      queryClient.invalidateQueries({ queryKey: ['user-settings', userId] })
+      setShowQuote(settings.show_quotes_on_block_screen)
+      setShowTasks(settings.show_tasks_on_block_screen)
+      setShowVisionCards(settings.show_vision_cards_on_block_screen)
+      setSettingsMessage('Saved. The extension will use these preferences on the real blocked screen.')
+    },
+    onError: (error) => {
+      setSettingsMessage(error.message)
+    },
+  })
+
   useEffect(() => {
     if (visionCardsData.length === 0) return
     const matchingCard = visionCardsData.find((card) => card.id === selectedImageId)
@@ -228,6 +281,14 @@ export default function BlockScreenPreview() {
     setSelectedImageId(nextCard.id)
     setCaption(nextCard.caption || 'Stay connected to your why')
   }, [selectedImageId, visionCardsData])
+
+  useEffect(() => {
+    if (!settingsQuery.data) return
+
+    setShowQuote(settingsQuery.data.show_quotes_on_block_screen)
+    setShowTasks(settingsQuery.data.show_tasks_on_block_screen)
+    setShowVisionCards(settingsQuery.data.show_vision_cards_on_block_screen)
+  }, [settingsQuery.data])
 
   useEffect(() => {
     const blockedRules = blockedRulesData.map((item) => item.app_or_url)
@@ -279,11 +340,18 @@ export default function BlockScreenPreview() {
       show_quotes_on_block_screen: showQuote,
       show_tasks_on_block_screen: showTasks,
       show_vision_cards_on_block_screen: showVisionCards,
-      bypass_cooldown_seconds: 20,
-      bypass_requires_reason: false,
     }),
     [showQuote, showTasks, showVisionCards],
   )
+
+  function handleSaveSettings() {
+    setSettingsMessage('')
+    saveSettingsMutation.mutate({
+      show_quotes_on_block_screen: showQuote,
+      show_tasks_on_block_screen: showTasks,
+      show_vision_cards_on_block_screen: showVisionCards,
+    })
+  }
 
   function handleUploadButtonClick() {
     fileInputRef.current?.click()
@@ -306,7 +374,7 @@ export default function BlockScreenPreview() {
               <p className="text-sm uppercase tracking-[0.28em] text-[color:var(--muted)]">Preview builder</p>
               <h1 className="mt-3 text-4xl font-semibold text-[color:var(--text)]">Customize your block screen preview.</h1>
               <p className="mt-4 max-w-2xl text-[color:var(--muted)]">
-                Choose the message, browse your recent images, and preview the actual blocker at a much larger size.
+                The web app is now the control panel. Save your real block-screen preferences here, then preview the same experience before the extension uses it.
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-3">
@@ -347,6 +415,9 @@ export default function BlockScreenPreview() {
                   className="rounded-3xl border border-[color:var(--border)] bg-[color:var(--surface)] px-4 py-3 text-[color:var(--text)] outline-none ring-1 ring-transparent transition focus:border-[color:var(--accent)] focus:ring-[color:var(--accent)]/30"
                 />
               </label>
+              <p className="text-xs text-[color:var(--muted)]">
+                Quote text and author here are only for preview experimentation. The real extension blocked screen uses the quote of the day fetched from Supabase.
+              </p>
 
               <div className="grid gap-4 text-sm text-[color:var(--text)]">
                 <div className="flex items-center justify-between gap-3">
@@ -508,6 +579,23 @@ export default function BlockScreenPreview() {
                   <input type="checkbox" checked={showVisionCards} onChange={(event) => setShowVisionCards(event.target.checked)} className="h-4 w-4 rounded border-[color:var(--border)] bg-[color:var(--surface)] text-[color:var(--accent)]" />
                   <span className="text-sm text-[color:var(--text)]">Show vision card</span>
                 </label>
+              </div>
+
+              {settingsMessage && (
+                <div className="rounded-2xl bg-[color:var(--surface)] px-4 py-3 text-xs text-[color:var(--muted)]">
+                  {settingsMessage}
+                </div>
+              )}
+
+              <div className="flex justify-end">
+                <button
+                  type="button"
+                  onClick={handleSaveSettings}
+                  disabled={saveSettingsMutation.isPending || settingsQuery.isLoading}
+                  className="rounded-3xl bg-gradient-to-r from-[color:var(--accent)] to-[color:var(--accent-strong)] px-5 py-3 text-sm font-semibold text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {saveSettingsMutation.isPending ? 'Saving...' : 'Save real extension settings'}
+                </button>
               </div>
             </div>
           </div>

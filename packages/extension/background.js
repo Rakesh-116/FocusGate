@@ -1,49 +1,64 @@
-const DEFAULT_BLOCKED_URLS = ["youtube.com/shorts", "instagram.com/reels", "tiktok.com", "x.com/i/flow/trending"];
-const APP_ORIGIN = "http://localhost:5173";
-const APP_URL = `${APP_ORIGIN}/dashboard`;
-const SUPABASE_URL = "https://xklfbprajleumjfgbocn.supabase.co";
-const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InhrbGZicHJhamxldW1qZmdib2NuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgzODY2NzIsImV4cCI6MjA5Mzk2MjY3Mn0.ElLOdbfiNJnR8B8tudNQ9fDNVYVl-aCF4-Ctau7-LEo";
-const DEFAULT_BLOCK_GROUP_NAME = "FocusGate Web Blocklist";
-const TEMP_BYPASS_DURATION_MS = 10 * 60 * 1000;
-const SESSION_REFRESH_BUFFER_SECONDS = 60;
-const REMOTE_SYNC_STALE_MS = 15 * 1000;
+/* Extension background worker that syncs focus data and enforces blocked URLs. */
+import { getBlockedPageUrl, getDashboardUrl } from "./lib/config.js";
+import { isExtensionPage, matchesBlockedRule, normalizeMatchValue } from "./lib/normalize.js";
+import {
+    getAppConfig,
+    getBlockedScreenData,
+    getBlockedUrls,
+    getExtensionSession,
+    getRemoteSyncMeta,
+    getTaskSyncState,
+    getTemporaryBypasses,
+    saveTemporaryBypass,
+    setStorage,
+    STORAGE_KEYS,
+} from "./lib/storage.js";
+import {
+    ensureFreshExtensionSession,
+    fetchBlockedRules,
+    fetchFuturePreview,
+    fetchQuoteOfDay,
+    fetchTasksForToday,
+    fetchUserSettings,
+    fetchVisionCards,
+    insertBypassAttempt,
+    toggleTaskCompletion,
+    refreshVisionCardImageUrl,
+} from "./lib/supabase-api.js";
+import { REMOTE_SYNC_STALE_MS, TEMP_BYPASS_DURATION_MS, getTodayKey } from "./lib/time.js";
 
-function getTodayKey() {
-    const now = new Date();
-    const year = now.getFullYear();
-    const month = String(now.getMonth() + 1).padStart(2, "0");
-    const day = String(now.getDate()).padStart(2, "0");
-    return `${year}-${month}-${day}`;
+const REMOTE_SYNC_ALARM = "focusgate-remote-sync";
+const REMOTE_SYNC_ALARM_MINUTES = 15;
+
+function logInfo(message, details) {
+    console.info("[FocusGate background]", message, details ?? "");
 }
 
-function normalizeMatchValue(value) {
-    return (value || "")
-        .toLowerCase()
-        .trim()
-        .replace(/^https?:\/\//, "")
-        .replace(/^www\./, "")
-        .replace(/\/$/, "");
+function logError(message, error) {
+    console.error("[FocusGate background]", message, error);
 }
 
-function matchesBlockedRule(url, rule) {
-    const normalizedUrl = normalizeMatchValue(url);
-    const normalizedRule = normalizeMatchValue(rule);
-    return normalizedRule !== "" && normalizedUrl.startsWith(normalizedRule);
+function getDefaultBlockScreenSettings() {
+    return {
+        show_tasks_on_block_screen: true,
+        show_vision_cards_on_block_screen: true,
+        show_quotes_on_block_screen: true,
+        bypass_cooldown_seconds: 30,
+        bypass_requires_reason: true,
+    };
 }
 
-function isExtensionPage(url) {
-    return typeof url === "string" && url.startsWith(`chrome-extension://${chrome.runtime.id}/`);
+function buildSyncMeta(partial = {}) {
+    return {
+        lastAttemptedAt: new Date().toISOString(),
+        lastSuccessfulAt: null,
+        lastError: null,
+        source: "background",
+        ...partial,
+    };
 }
 
-function getStorage(keys) {
-    return new Promise((resolve) => chrome.storage.local.get(keys, resolve));
-}
-
-function setStorage(values) {
-    return new Promise((resolve) => chrome.storage.local.set(values, resolve));
-}
-
-function sendTabMessage(tabId, message) {
+async function sendTabMessage(tabId, message) {
     return new Promise((resolve) => {
         chrome.tabs.sendMessage(tabId, message, () => {
             void chrome.runtime.lastError;
@@ -52,50 +67,8 @@ function sendTabMessage(tabId, message) {
     });
 }
 
-function normalizeBlockedRule(rule) {
-    return (rule || "")
-        .toLowerCase()
-        .trim()
-        .replace(/^https?:\/\//, "")
-        .replace(/^www\./, "")
-        .replace(/\/$/, "");
-}
-
-function getBlockedPageUrl(url, rule) {
-    return `${APP_ORIGIN}/blocked?url=${encodeURIComponent(url)}&rule=${encodeURIComponent(rule)}`;
-}
-
-function wait(ms) {
-    return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function buildSupabaseHeaders(accessToken) {
-    return {
-        apikey: SUPABASE_ANON_KEY,
-        Authorization: `Bearer ${accessToken}`,
-        "Content-Type": "application/json",
-    };
-}
-
-async function getTemporaryBypasses() {
-    const result = await getStorage(["temporaryBypasses"]);
-    const now = Date.now();
-    const storedBypasses = result.temporaryBypasses ?? {};
-    const activeBypasses = Object.fromEntries(
-        Object.entries(storedBypasses).filter(([, expiresAt]) => Number(expiresAt) > now),
-    );
-
-    if (Object.keys(activeBypasses).length !== Object.keys(storedBypasses).length) {
-        await setStorage({ temporaryBypasses: activeBypasses });
-    }
-
-    return activeBypasses;
-}
-
 async function getBlockingState() {
-    const result = await getStorage(["taskSyncState"]);
-    const taskSyncState = result.taskSyncState;
-
+    const taskSyncState = await getTaskSyncState();
     if (!taskSyncState || taskSyncState.taskDate !== getTodayKey()) {
         return {
             active: false,
@@ -121,200 +94,246 @@ async function getBlockingState() {
     };
 }
 
-async function getBlockedRules() {
-    const result = await getStorage(["blockedUrls"]);
-    return Array.isArray(result.blockedUrls) ? result.blockedUrls : DEFAULT_BLOCKED_URLS;
+async function requestSyncFromAppTabs() {
+    const appConfig = await getAppConfig();
+    const appOrigin = appConfig?.appOrigin ?? null;
+    if (!appOrigin) {
+        return false;
+    }
+    const tabs = await chrome.tabs.query({ url: `${appOrigin}/*` });
+    const messages = [];
+    for (const tab of tabs) {
+        if (tab.id != null) {
+            messages.push(sendTabMessage(tab.id, { type: "focusgateRequestSync" }));
+        }
+    }
+    await Promise.all(messages);
+    return tabs.length > 0;
 }
 
-async function getExtensionSession() {
-    const result = await getStorage(["extensionSession"]);
-    return result.extensionSession ?? null;
+async function broadcastStateUpdate() {
+    const tabs = await chrome.tabs.query({});
+    const sends = [];
+    for (const tab of tabs) {
+        if (tab.id != null) {
+            sends.push(sendTabMessage(tab.id, { type: "focusgateStateUpdated" }));
+        }
+    }
+    await Promise.all(sends);
 }
 
-async function refreshExtensionSession(session) {
-    if (!session?.refreshToken) {
-        return session ?? null;
+function buildTaskSyncState(tasks, userId, source) {
+    const totalTaskCount = Array.isArray(tasks) ? tasks.length : 0;
+    let completedTaskCount = 0;
+
+    if (Array.isArray(tasks)) {
+        for (const task of tasks) {
+            if (task.completed) {
+                completedTaskCount += 1;
+            }
+        }
     }
 
-    const response = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=refresh_token`, {
-        method: "POST",
-        headers: {
-            apikey: SUPABASE_ANON_KEY,
-            "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ refresh_token: session.refreshToken }),
-    });
-
-    if (!response.ok) {
-        throw new Error(`Failed to refresh extension session (${response.status})`);
-    }
-
-    const data = await response.json();
-    const refreshedSession = {
-        userId: data.user?.id ?? session.userId ?? null,
-        accessToken: data.access_token,
-        refreshToken: data.refresh_token ?? session.refreshToken,
-        expiresAt: data.expires_at ?? null,
+    const pendingTaskCount = Math.max(totalTaskCount - completedTaskCount, 0);
+    return {
+        userId: userId ?? null,
+        taskDate: getTodayKey(),
+        totalTaskCount,
+        completedTaskCount,
+        pendingTaskCount,
+        hasPendingTasks: pendingTaskCount > 0,
+        lastSyncedAt: new Date().toISOString(),
+        source,
     };
-
-    await setStorage({ extensionSession: refreshedSession });
-    return refreshedSession;
-}
-
-async function ensureFreshExtensionSession() {
-    const session = await getExtensionSession();
-    if (!session?.accessToken) {
-        return null;
-    }
-
-    const expiresAtMs = Number(session.expiresAt || 0) * 1000;
-    if (expiresAtMs && expiresAtMs - Date.now() > SESSION_REFRESH_BUFFER_SECONDS * 1000) {
-        return session;
-    }
-
-    return refreshExtensionSession(session);
-}
-
-async function fetchTasksFromSupabase(session) {
-    const url = new URL(`${SUPABASE_URL}/rest/v1/tasks`);
-    url.searchParams.set("select", "id,user_id,title,completed,date,created_at");
-    url.searchParams.set("user_id", `eq.${session.userId}`);
-    url.searchParams.set("date", `eq.${getTodayKey()}`);
-    url.searchParams.set("order", "created_at.asc");
-
-    const response = await fetch(url.toString(), {
-        headers: buildSupabaseHeaders(session.accessToken),
-    });
-
-    if (!response.ok) {
-        throw new Error(`Failed to fetch tasks (${response.status})`);
-    }
-
-    return await response.json();
-}
-
-async function fetchBlockedRulesFromSupabase(session) {
-    const groupUrl = new URL(`${SUPABASE_URL}/rest/v1/block_groups`);
-    groupUrl.searchParams.set("select", "id");
-    groupUrl.searchParams.set("user_id", `eq.${session.userId}`);
-    groupUrl.searchParams.set("name", `eq.${DEFAULT_BLOCK_GROUP_NAME}`);
-    groupUrl.searchParams.set("limit", "1");
-
-    const groupResponse = await fetch(groupUrl.toString(), {
-        headers: buildSupabaseHeaders(session.accessToken),
-    });
-
-    if (!groupResponse.ok) {
-        throw new Error(`Failed to fetch block group (${groupResponse.status})`);
-    }
-
-    const groups = await groupResponse.json();
-    const groupId = groups?.[0]?.id;
-
-    if (!groupId) {
-        return [];
-    }
-
-    const itemsUrl = new URL(`${SUPABASE_URL}/rest/v1/block_group_items`);
-    itemsUrl.searchParams.set("select", "app_or_url");
-    itemsUrl.searchParams.set("group_id", `eq.${groupId}`);
-    itemsUrl.searchParams.set("platform", "in.(web,all)");
-    itemsUrl.searchParams.set("order", "app_or_url.asc");
-
-    const itemsResponse = await fetch(itemsUrl.toString(), {
-        headers: buildSupabaseHeaders(session.accessToken),
-    });
-
-    if (!itemsResponse.ok) {
-        throw new Error(`Failed to fetch blocked rules (${itemsResponse.status})`);
-    }
-
-    const items = await itemsResponse.json();
-    return Array.isArray(items) ? items.map((item) => normalizeBlockedRule(item.app_or_url)).filter(Boolean) : [];
 }
 
 async function refreshRemoteState(force = false) {
-    const [cachedState, cachedBlockedUrls, session] = await Promise.all([
-        getStorage(["taskSyncState"]).then((result) => result.taskSyncState ?? null),
-        getBlockedRules(),
+    const [appConfig, blockedUrls, blockedScreenData, session] = await Promise.all([
+        getAppConfig(),
+        getBlockedUrls(),
+        getBlockedScreenData(),
         getExtensionSession(),
     ]);
 
-    const lastSyncedAt = cachedState?.lastSyncedAt ? new Date(cachedState.lastSyncedAt).getTime() : 0;
-    if (!force && lastSyncedAt && Date.now() - lastSyncedAt < REMOTE_SYNC_STALE_MS) {
+    const lastSyncedAtMs = blockedScreenData?.lastSyncedAt ? new Date(blockedScreenData.lastSyncedAt).getTime() : 0;
+    if (!force && lastSyncedAtMs && Date.now() - lastSyncedAtMs < REMOTE_SYNC_STALE_MS) {
         return {
-            blockedUrls: cachedBlockedUrls,
+            blockedUrls,
             blockingState: await getBlockingState(),
+            blockedScreenData: blockedScreenData ?? null,
+            setupReady: Boolean(appConfig?.supabaseUrl && appConfig?.supabaseAnonKey && session?.userId),
         };
     }
 
-    if (!session?.userId) {
+    if (!appConfig?.supabaseUrl || !appConfig?.supabaseAnonKey || !session?.userId) {
+        await setStorage({
+            [STORAGE_KEYS.remoteSyncMeta]: buildSyncMeta({
+                lastSuccessfulAt: blockedScreenData?.lastSyncedAt ?? null,
+                lastError: "Missing extension session or app config",
+            }),
+        });
         return {
-            blockedUrls: cachedBlockedUrls,
+            blockedUrls,
             blockingState: await getBlockingState(),
+            blockedScreenData: blockedScreenData ?? null,
+            setupReady: false,
         };
     }
 
     try {
-        const freshSession = await ensureFreshExtensionSession();
+        await setStorage({
+            [STORAGE_KEYS.remoteSyncMeta]: buildSyncMeta({
+                lastSuccessfulAt: blockedScreenData?.lastSyncedAt ?? null,
+                lastError: null,
+            }),
+        });
+
+        let freshSession;
+        try {
+            freshSession = await ensureFreshExtensionSession(session, appConfig);
+        } catch (error) {
+            logError("ensureFreshExtensionSession failed", error);
+            await setStorage({
+                [STORAGE_KEYS.remoteSyncMeta]: buildSyncMeta({
+                    lastSuccessfulAt: blockedScreenData?.lastSyncedAt ?? null,
+                    lastError: error?.message ?? String(error),
+                }),
+            });
+            return {
+                blockedUrls,
+                blockingState: await getBlockingState(),
+                blockedScreenData: blockedScreenData ?? null,
+                setupReady: false,
+            };
+        }
         if (!freshSession?.userId || !freshSession.accessToken) {
             return {
-                blockedUrls: cachedBlockedUrls,
+                blockedUrls,
                 blockingState: await getBlockingState(),
+                blockedScreenData: blockedScreenData ?? null,
+                setupReady: false,
             };
         }
 
-        const [tasks, blockedUrls] = await Promise.all([
-            fetchTasksFromSupabase(freshSession),
-            fetchBlockedRulesFromSupabase(freshSession),
-        ]);
+        let tasks = [];
+        let nextBlockedUrls = [];
+        let settings = null;
+        let visionCards = [];
+        let quote = null;
+        let futurePreview = null;
 
-        const totalTaskCount = Array.isArray(tasks) ? tasks.length : 0;
-        const completedTaskCount = Array.isArray(tasks) ? tasks.filter((task) => task.completed).length : 0;
-        const pendingTaskCount = Math.max(totalTaskCount - completedTaskCount, 0);
-        const syncedAt = new Date().toISOString();
+        try {
+            tasks = await fetchTasksForToday(freshSession, appConfig);
+        } catch (error) {
+            logError("fetchTasksForToday failed", error);
+        }
+
+        try {
+            nextBlockedUrls = await fetchBlockedRules(freshSession, appConfig);
+        } catch (error) {
+            logError("fetchBlockedRules failed", error);
+        }
+
+        try {
+            settings = await fetchUserSettings(freshSession, appConfig);
+        } catch (error) {
+            logError("fetchUserSettings failed", error);
+        }
+
+        try {
+            visionCards = await fetchVisionCards(freshSession, appConfig);
+        } catch (error) {
+            logError("fetchVisionCards failed", error);
+        }
+
+        try {
+            quote = await fetchQuoteOfDay(freshSession, appConfig);
+        } catch (error) {
+            logError("fetchQuoteOfDay failed", error);
+        }
+
+        try {
+            futurePreview = await fetchFuturePreview(freshSession, appConfig);
+        } catch (error) {
+            logError("fetchFuturePreview failed", error);
+        }
+
+        const taskSyncState = buildTaskSyncState(tasks, freshSession.userId, "supabase");
+        const nextBlockedScreenData = {
+            userId: freshSession.userId,
+            tasks: Array.isArray(tasks) ? tasks : [],
+            visionCards: Array.isArray(visionCards) ? visionCards : [],
+            quote: quote ?? null,
+            futurePreview: futurePreview ?? null,
+            settings: settings ?? getDefaultBlockScreenSettings(),
+            blockedUrls: Array.isArray(nextBlockedUrls) ? nextBlockedUrls : [],
+            appOrigin: appConfig.appOrigin,
+            appDashboardUrl: getDashboardUrl(appConfig.appOrigin),
+            lastSyncedAt: taskSyncState.lastSyncedAt,
+        };
 
         await setStorage({
-            blockedUrls,
-            taskSyncState: {
-                userId: freshSession.userId,
-                taskDate: getTodayKey(),
-                totalTaskCount,
-                completedTaskCount,
-                pendingTaskCount,
-                hasPendingTasks: pendingTaskCount > 0,
-                lastSyncedAt: syncedAt,
-                source: "supabase",
-            },
+            [STORAGE_KEYS.blockedUrls]: nextBlockedScreenData.blockedUrls,
+            [STORAGE_KEYS.blockedScreenData]: nextBlockedScreenData,
+            [STORAGE_KEYS.extensionSession]: freshSession,
+            [STORAGE_KEYS.remoteSyncMeta]: buildSyncMeta({
+                lastSuccessfulAt: taskSyncState.lastSyncedAt,
+                lastError: null,
+            }),
+            [STORAGE_KEYS.taskSyncState]: taskSyncState,
         });
 
         return {
-            blockedUrls,
-            blockingState: {
-                active: pendingTaskCount > 0,
-                reason: pendingTaskCount > 0 ? `${pendingTaskCount} pending task(s)` : "All tasks complete",
-                pendingTaskCount,
-                completedTaskCount,
-                totalTaskCount,
-                lastSyncedAt: syncedAt,
-            },
+            blockedUrls: nextBlockedScreenData.blockedUrls,
+            blockingState: await getBlockingState(),
+            blockedScreenData: nextBlockedScreenData,
+            setupReady: true,
         };
     } catch (error) {
-        console.error("FocusGate remote sync failed", error);
+        logError("refreshRemoteState failed", error);
+        await setStorage({
+            [STORAGE_KEYS.remoteSyncMeta]: buildSyncMeta({
+                lastSuccessfulAt: blockedScreenData?.lastSyncedAt ?? null,
+                lastError: error?.message ?? String(error),
+            }),
+        });
         return {
-            blockedUrls: cachedBlockedUrls,
+            blockedUrls,
             blockingState: await getBlockingState(),
+            blockedScreenData: blockedScreenData ?? null,
+            setupReady: Boolean(appConfig?.supabaseUrl && appConfig?.supabaseAnonKey && session?.userId),
         };
     }
 }
 
-async function requestSyncFromAppTabs() {
-    const tabs = await chrome.tabs.query({ url: `${APP_ORIGIN}/*` });
-    await Promise.all(
-        tabs
-            .filter((tab) => tab.id != null)
-            .map((tab) => sendTabMessage(tab.id, { type: "focusgateRequestSync" })),
-    );
+async function syncAllData(source = "manual") {
+    const [appConfig, session] = await Promise.all([getAppConfig(), getExtensionSession()]);
+    let didRequestTabSync = false;
+
+    if (!appConfig?.supabaseUrl || !appConfig?.supabaseAnonKey || !session?.refreshToken) {
+        didRequestTabSync = await requestSyncFromAppTabs().catch(() => false);
+        if (!didRequestTabSync) {
+            await setStorage({
+                [STORAGE_KEYS.remoteSyncMeta]: buildSyncMeta({
+                    source,
+                    lastError: "Connect your FocusGate account from the web app once to bootstrap the extension.",
+                }),
+            });
+        }
+    }
+
+    if (didRequestTabSync) {
+        await new Promise((resolve) => setTimeout(resolve, 300));
+    }
+
+    return refreshRemoteState(true);
+}
+
+async function scheduleRemoteSync() {
+    await chrome.alarms.create(REMOTE_SYNC_ALARM, {
+        delayInMinutes: 1,
+        periodInMinutes: REMOTE_SYNC_ALARM_MINUTES,
+    });
 }
 
 async function checkUrl(url, tabId) {
@@ -325,11 +344,16 @@ async function checkUrl(url, tabId) {
     const existingState = await getBlockingState();
     if (!existingState.lastSyncedAt) {
         await requestSyncFromAppTabs();
-        await wait(150);
+        await new Promise((resolve) => setTimeout(resolve, 150));
     }
 
     await refreshRemoteState(false);
-    const [rules, blockingState, temporaryBypasses] = await Promise.all([getBlockedRules(), getBlockingState(), getTemporaryBypasses()]);
+
+    const [rules, blockingState, temporaryBypasses] = await Promise.all([
+        getBlockedUrls(),
+        getBlockingState(),
+        getTemporaryBypasses(),
+    ]);
 
     if (!blockingState.active || !rules.length) {
         return { blocked: false, blockingState };
@@ -337,12 +361,12 @@ async function checkUrl(url, tabId) {
 
     for (const rule of rules) {
         if (matchesBlockedRule(url, rule)) {
-            const normalizedRule = normalizeBlockedRule(rule);
+            const normalizedRule = normalizeMatchValue(rule);
             if (Number(temporaryBypasses[normalizedRule] || 0) > Date.now()) {
                 return { blocked: false, rule, blockingState, bypassed: true };
             }
 
-            chrome.tabs.update(tabId, { url: getBlockedPageUrl(url, rule) });
+            chrome.tabs.update(tabId, { url: getBlockedPageUrl(rule, url) });
             return { blocked: true, rule, blockingState };
         }
     }
@@ -350,28 +374,229 @@ async function checkUrl(url, tabId) {
     return { blocked: false, blockingState };
 }
 
-async function broadcastStateUpdate() {
-    const tabs = await chrome.tabs.query({});
-    await Promise.all(
-        tabs
-            .filter((tab) => tab.id != null)
-            .map((tab) => sendTabMessage(tab.id, { type: "focusgateStateUpdated" })),
-    );
+async function mergeWebTaskSync(payload) {
+    const currentBlockedScreenData = await getBlockedScreenData();
+    const nextTaskSyncState = payload
+        ? {
+              userId: payload.userId ?? null,
+              taskDate: payload.taskDate ?? getTodayKey(),
+              totalTaskCount: Number(payload.totalTaskCount || 0),
+              completedTaskCount: Number(payload.completedTaskCount || 0),
+              pendingTaskCount: Number(payload.pendingTaskCount || 0),
+              hasPendingTasks: Boolean(payload.pendingTaskCount > 0),
+              lastSyncedAt: payload.lastSyncedAt ?? new Date().toISOString(),
+              source: "page",
+          }
+        : null;
+
+    const nextBlockedScreenData = currentBlockedScreenData
+        ? {
+              ...currentBlockedScreenData,
+              lastSyncedAt: nextTaskSyncState?.lastSyncedAt ?? currentBlockedScreenData.lastSyncedAt,
+          }
+        : currentBlockedScreenData;
+
+    await setStorage({
+        [STORAGE_KEYS.taskSyncState]: nextTaskSyncState,
+        [STORAGE_KEYS.blockedScreenData]: nextBlockedScreenData,
+    });
+}
+
+async function mergeAppConfig(payload) {
+    if (!payload) {
+        return;
+    }
+
+    const currentAppConfig = (await getAppConfig()) ?? {};
+    await setStorage({
+        [STORAGE_KEYS.appConfig]: {
+            ...currentAppConfig,
+            appOrigin: payload.appOrigin ?? currentAppConfig.appOrigin ?? null,
+            supabaseUrl: payload.supabaseUrl ?? currentAppConfig.supabaseUrl ?? null,
+            supabaseAnonKey: payload.supabaseAnonKey ?? currentAppConfig.supabaseAnonKey ?? null,
+        },
+    });
+}
+
+async function handleToggleTask(taskId, completed) {
+    const [appConfig, session, blockedScreenData] = await Promise.all([
+        getAppConfig(),
+        getExtensionSession(),
+        getBlockedScreenData(),
+    ]);
+
+    if (!appConfig || !session?.userId) {
+        throw new Error("FocusGate extension is not configured yet.");
+    }
+
+    const freshSession = await ensureFreshExtensionSession(session, appConfig);
+    if (!freshSession?.userId) {
+        throw new Error("Missing extension session.");
+    }
+
+    const updatedTask = await toggleTaskCompletion(taskId, completed, freshSession, appConfig);
+    const currentTasks = Array.isArray(blockedScreenData?.tasks) ? blockedScreenData.tasks : [];
+    const nextTasks = [];
+
+    for (const task of currentTasks) {
+        if (task.id === taskId) {
+            nextTasks.push({ ...task, completed });
+        } else {
+            nextTasks.push(task);
+        }
+    }
+
+    const nextTaskSyncState = buildTaskSyncState(nextTasks, freshSession.userId, "extension");
+    const nextBlockedScreenData = {
+        ...(blockedScreenData ?? {}),
+        userId: freshSession.userId,
+        tasks: nextTasks,
+        lastSyncedAt: nextTaskSyncState.lastSyncedAt,
+    };
+
+    await setStorage({
+        [STORAGE_KEYS.extensionSession]: freshSession,
+        [STORAGE_KEYS.taskSyncState]: nextTaskSyncState,
+        [STORAGE_KEYS.blockedScreenData]: nextBlockedScreenData,
+    });
+
+    await broadcastStateUpdate();
+
+    return {
+        updatedTask,
+        blockedScreenData: nextBlockedScreenData,
+        blockingState: await getBlockingState(),
+    };
+}
+
+async function handleBypass(rule, blockedUrl, reason, durationMs = TEMP_BYPASS_DURATION_MS) {
+    const normalizedRule = normalizeMatchValue(rule);
+    if (!normalizedRule) {
+        throw new Error("Missing blocked rule for bypass.");
+    }
+
+    const [appConfig, session] = await Promise.all([getAppConfig(), getExtensionSession()]);
+    if (appConfig?.supabaseUrl && appConfig?.supabaseAnonKey && session?.userId) {
+        try {
+            const freshSession = await ensureFreshExtensionSession(session, appConfig);
+            if (freshSession?.userId) {
+                await insertBypassAttempt(
+                    {
+                        user_id: freshSession.userId,
+                        app_or_url: blockedUrl,
+                        attempted_at: new Date().toISOString(),
+                        bypassed: true,
+                        bypass_reason: reason || null,
+                        bypass_waited_seconds: Math.round(Number(durationMs) / 1000),
+                    },
+                    freshSession,
+                    appConfig,
+                );
+
+                await setStorage({ [STORAGE_KEYS.extensionSession]: freshSession });
+            }
+        } catch (error) {
+            logError("handleBypass logging failed", error);
+        }
+    }
+
+    await saveTemporaryBypass(normalizedRule, Number(durationMs) || TEMP_BYPASS_DURATION_MS);
+    return { ok: true };
 }
 
 chrome.runtime.onInstalled.addListener(async () => {
-    const result = await getStorage(["blockedUrls"]);
-    if (!Array.isArray(result.blockedUrls)) {
-        await setStorage({ blockedUrls: DEFAULT_BLOCKED_URLS });
+    const blockedUrls = await getBlockedUrls();
+    if (!Array.isArray(blockedUrls) || blockedUrls.length === 0) {
+        await setStorage({
+            [STORAGE_KEYS.blockedUrls]: [
+                "youtube.com/shorts",
+                "instagram.com/reels",
+                "tiktok.com",
+                "x.com/i/flow/trending",
+            ],
+        });
+    }
+
+    await scheduleRemoteSync();
+    await syncAllData("install");
+});
+
+chrome.runtime.onStartup.addListener(() => {
+    void scheduleRemoteSync();
+    void syncAllData("startup");
+});
+
+chrome.alarms.onAlarm.addListener((alarm) => {
+    if (alarm.name === REMOTE_SYNC_ALARM) {
+        void syncAllData("alarm");
     }
 });
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message?.type === "getExtensionState") {
-        requestSyncFromAppTabs()
-            .then(() => wait(150))
-            .then(() => refreshRemoteState(true))
-            .then((state) => sendResponse(state));
+        syncAllData("popup")
+            .then(async (state) => {
+                const remoteSyncMeta = await getRemoteSyncMeta();
+                sendResponse({ ...state, remoteSyncMeta });
+            })
+            .catch((error) => {
+                logError("getExtensionState failed", error);
+                sendResponse({ blockedUrls: [], blockingState: null, blockedScreenData: null, remoteSyncMeta: null, setupReady: false });
+            });
+        return true;
+    }
+
+    if (message?.type === "getBlockedScreenData") {
+        syncAllData("blocked-page")
+            .then(async (state) => {
+                sendResponse({
+                    setupReady: state.setupReady,
+                    blockedScreenData: state.blockedScreenData ?? (await getBlockedScreenData()),
+                    blockingState: state.blockingState,
+                });
+            })
+            .catch((error) => {
+                logError("getBlockedScreenData failed", error);
+                sendResponse({ setupReady: false, blockedScreenData: null, blockingState: null });
+            });
+        return true;
+    }
+
+    if (message?.type === "syncNow") {
+        syncAllData("manual")
+            .then(async (state) => {
+                const remoteSyncMeta = await getRemoteSyncMeta();
+                sendResponse({ ok: true, ...state, remoteSyncMeta });
+            })
+            .catch((error) => {
+                logError("syncNow failed", error);
+                sendResponse({ ok: false, error: error?.message ?? String(error) });
+            });
+        return true;
+    }
+
+    if (message?.type === "toggleTask") {
+        handleToggleTask(message.payload?.taskId, Boolean(message.payload?.completed))
+            .then((result) => sendResponse(result))
+            .catch((error) => {
+                logError("toggleTask failed", error);
+                sendResponse({ error: error.message });
+            });
+        return true;
+    }
+
+    if (message?.type === "confirmBypass") {
+        handleBypass(
+            message.payload?.rule,
+            message.payload?.blockedUrl,
+            message.payload?.reason ?? "",
+            message.payload?.durationMs ?? TEMP_BYPASS_DURATION_MS,
+        )
+            .then((result) => sendResponse(result))
+            .catch((error) => {
+                logError("confirmBypass failed", error);
+                sendResponse({ error: error.message });
+            });
         return true;
     }
 
@@ -382,50 +607,82 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
     if (message?.type === "syncSession") {
         setStorage({
-            extensionSession: message.payload
+            [STORAGE_KEYS.extensionSession]: message.payload
                 ? {
-                    userId: message.payload.userId ?? null,
-                    accessToken: message.payload.accessToken ?? null,
-                    refreshToken: message.payload.refreshToken ?? null,
-                    expiresAt: message.payload.expiresAt ?? null,
-                }
+                      userId: message.payload.userId ?? null,
+                      accessToken: message.payload.accessToken ?? null,
+                      refreshToken: message.payload.refreshToken ?? null,
+                      expiresAt: message.payload.expiresAt ?? null,
+                  }
                 : null,
-        }).then(() => {
-            refreshRemoteState(true).then(() => {
-                broadcastStateUpdate().then(() => sendResponse({ ok: true }));
+        })
+            .then(() => syncAllData("session-sync"))
+            .then(() => broadcastStateUpdate())
+            .then(() => sendResponse({ ok: true }))
+            .catch((error) => {
+                logError("syncSession failed", error);
+                sendResponse({ ok: false, error: error.message });
             });
-        });
         return true;
     }
 
     if (message?.type === "syncTaskState") {
-        const payload = message.payload ?? null;
-        setStorage({
-            taskSyncState: payload
-                ? {
-                    userId: payload.userId ?? null,
-                    taskDate: payload.taskDate ?? getTodayKey(),
-                    totalTaskCount: Number(payload.totalTaskCount || 0),
-                    completedTaskCount: Number(payload.completedTaskCount || 0),
-                    pendingTaskCount: Number(payload.pendingTaskCount || 0),
-                    hasPendingTasks: Boolean(payload.pendingTaskCount > 0),
-                    lastSyncedAt: payload.lastSyncedAt ?? new Date().toISOString(),
-                    source: "page",
-                }
-                : null,
-        }).then(() => {
-            broadcastStateUpdate().then(() => sendResponse({ ok: true }));
-        });
+        mergeWebTaskSync(message.payload ?? null)
+            .then(() => broadcastStateUpdate())
+            .then(() => sendResponse({ ok: true }))
+            .catch((error) => {
+                logError("syncTaskState failed", error);
+                sendResponse({ ok: false, error: error.message });
+            });
         return true;
     }
 
     if (message?.type === "syncBlockedUrls") {
         const blockedUrls = Array.isArray(message.payload)
-            ? message.payload.map((rule) => normalizeBlockedRule(rule)).filter(Boolean)
+            ? message.payload.map((rule) => normalizeMatchValue(rule)).filter(Boolean)
             : [];
-        setStorage({ blockedUrls }).then(() => {
-            broadcastStateUpdate().then(() => sendResponse({ ok: true }));
-        });
+        setStorage({ [STORAGE_KEYS.blockedUrls]: blockedUrls })
+            .then(() => syncAllData("rules-sync"))
+            .then(() => broadcastStateUpdate())
+            .then(() => sendResponse({ ok: true }))
+            .catch((error) => {
+                logError("syncBlockedUrls failed", error);
+                sendResponse({ ok: false, error: error.message });
+            });
+        return true;
+    }
+
+    if (message?.type === "syncAppConfig") {
+        mergeAppConfig(message.payload ?? null)
+            .then(() => syncAllData("config-sync"))
+            .then(() => broadcastStateUpdate())
+            .then(() => sendResponse({ ok: true }))
+            .catch((error) => {
+                logError("syncAppConfig failed", error);
+                sendResponse({ ok: false, error: error.message });
+            });
+        return true;
+    }
+
+    if (message?.type === "refreshVisionCardUrl") {
+        const imageUrl = message.payload?.imageUrl;
+        if (!imageUrl) {
+            sendResponse({ imageUrl: null });
+            return true;
+        }
+
+        Promise.all([getAppConfig(), getExtensionSession()])
+            .then(([appConfig, session]) => {
+                if (!appConfig?.supabaseUrl || !appConfig?.supabaseAnonKey || !session?.userId) {
+                    return { imageUrl };
+                }
+                return refreshVisionCardImageUrl(imageUrl, session, appConfig).then((nextUrl) => ({ imageUrl: nextUrl }));
+            })
+            .then((result) => sendResponse(result))
+            .catch((error) => {
+                logError("refreshVisionCardUrl failed", error);
+                sendResponse({ imageUrl });
+            });
         return true;
     }
 
@@ -435,35 +692,44 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
 
     if (message?.type === "tempBypass") {
-        const rule = normalizeBlockedRule(message.payload?.rule);
-        const durationMs = Number(message.payload?.durationMs || TEMP_BYPASS_DURATION_MS);
-
-        if (!rule) {
-            sendResponse({ ok: false });
-            return false;
-        }
-
-        getTemporaryBypasses().then((temporaryBypasses) => {
-            setStorage({
-                temporaryBypasses: {
-                    ...temporaryBypasses,
-                    [rule]: Date.now() + durationMs,
-                },
-            }).then(() => sendResponse({ ok: true }));
-        });
+        handleBypass(
+            message.payload?.rule,
+            message.payload?.blockedUrl,
+            message.payload?.reason ?? "",
+            message.payload?.durationMs,
+        )
+            .then((result) => sendResponse(result))
+            .catch((error) => {
+                logError("tempBypass failed", error);
+                sendResponse({ ok: false, error: error.message });
+            });
         return true;
     }
 
     if (message?.type === "openApp") {
-        chrome.tabs.create({ url: APP_URL });
-        sendResponse({ ok: true });
+        getAppConfig()
+            .then((appConfig) => {
+                const dashboardUrl = getDashboardUrl(appConfig?.appOrigin);
+                if (!dashboardUrl) {
+                    throw new Error("FocusGate app origin is not configured yet.");
+                }
+                return chrome.tabs.create({ url: dashboardUrl });
+            })
+            .then(() => sendResponse({ ok: true }));
         return true;
     }
 
     if (message?.type === "goBackOrClose" && sender.tab?.id) {
         chrome.tabs.goBack(sender.tab.id, () => {
             if (chrome.runtime.lastError) {
-                chrome.tabs.update(sender.tab.id, { url: APP_URL }, () => sendResponse({ ok: true }));
+                getAppConfig().then((appConfig) => {
+                    const dashboardUrl = getDashboardUrl(appConfig?.appOrigin);
+                    if (!dashboardUrl) {
+                        sendResponse({ ok: false, error: "FocusGate app origin is not configured yet." });
+                        return;
+                    }
+                    chrome.tabs.update(sender.tab.id, { url: dashboardUrl }, () => sendResponse({ ok: true }));
+                });
                 return;
             }
             sendResponse({ ok: true });
@@ -476,7 +742,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 chrome.webNavigation.onBeforeNavigate.addListener(
     (details) => {
-        if (details.frameId !== 0) return;
+        if (details.frameId !== 0) {
+            return;
+        }
         checkUrl(details.url, details.tabId);
     },
     {
@@ -489,3 +757,5 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
         checkUrl(changeInfo.url, tabId);
     }
 });
+
+logInfo("Background worker loaded");
